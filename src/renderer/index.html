@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' file: data:; style-src 'self'; script-src 'self';">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bus Malik Somiti</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <section id="auth" class="auth-shell" hidden>
+    <div class="auth-card">
+      <div class="brand-mark">BS</div>
+      <h1 id="auth-title">Bus Malik Somiti</h1>
+      <p id="auth-description">Sign in to manage association operations.</p>
+      <form id="auth-form"></form>
+      <div id="auth-error" class="error-text"></div>
+    </div>
+  </section>
+  <div id="app" class="app-shell" hidden>
+    <aside class="sidebar">
+      <div class="brand"><div class="brand-mark">BS</div><div><strong data-i18n="brand">Bus Malik Somiti</strong><small>Management System</small></div></div>
+      <nav id="navigation"></nav>
+      <div class="sidebar-bottom"><span id="user-label"></span><button id="logout" class="nav-link">↪ <span data-i18n="logout">Sign out</span></button></div>
+    </aside>
+    <main class="main">
+      <header class="topbar"><div><div class="eyebrow" data-i18n="workspace">ASSOCIATION WORKSPACE</div><h1 id="page-title">Dashboard</h1></div>
+        <div class="top-actions"><span class="offline-pill"><i></i><span data-i18n="offline">Offline ready</span></span><button id="language-toggle" class="button button-outline">বাংলা</button></div>
+      </header>
+      <section id="content" class="content"></section>
+    </main>
+  </div>
+  <div id="modal-root"></div>
+  <div id="toast" class="toast"></div>
+  <script src="app.js"></script>
+</body>
+</html>
