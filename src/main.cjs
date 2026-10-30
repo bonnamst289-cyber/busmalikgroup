@@ -74,14 +74,28 @@ function registerIpc() {
   register('receipts:list', () => database.listReceipts(requireUser()));
   register('audit:list', () => database.listAudit(requireAdmin()));
   register('login-history:list', () => database.listLoginHistory(requireAdmin()));
-  register('trips:save', (data) => database.saveTrip(requireUser(), data));
-  register('trips:delete', (id) => database.deleteTrip(requireAdmin(), id));
   register('finance:post', (data) => database.postTransaction(requireUser(), data));
+  register('finance:update', (data) => database.updateTransaction(requireUser(), data));
+  register('finance:delete', (id) => database.deleteTransaction(requireUser(), id));
   register('finance:list', (filters) => database.listTransactions(requireUser(), filters));
   register('finance:transfer', (data) => database.transfer(requireUser(), data));
-  register('dues:generate', (month) => database.generateDues(requireUser(), month));
-  register('dues:list', (month) => database.listDues(requireUser(), month));
-  register('dues:pay', (data) => database.payDue(requireUser(), data));
+  register('cashbook:get', () => database.cashbook(requireUser()));
+  register('cashbook:distribute', (data) => database.distributeCash(requireUser(), data));
+  register('settings:get', () => database.getSettings(requireUser()));
+  register('settings:save', (data) => database.saveSettings(requireAdmin(), data));
+  register('files:logo', async () => {
+    requireAdmin();
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Select association logo',
+      properties: ['openFile'],
+      filters: [{ name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'webp'] }]
+    });
+    if (result.canceled || !result.filePaths[0]) return null;
+    const source = result.filePaths[0];
+    const target = path.join(app.getPath('userData'), `association-logo${path.extname(source).toLowerCase()}`);
+    fs.copyFileSync(source, target);
+    return target;
+  });
   register('reports:get', (filters) => database.report(requireUser(), filters));
   register('files:owner-photo', async (ownerId) => {
     requireUser();
@@ -107,7 +121,7 @@ function registerIpc() {
       filters: [{ name: 'SQLite Database', extensions: ['sqlite', 'db'] }]
     });
     if (result.canceled || !result.filePath) return null;
-    database.backup(result.filePath);
+    await database.backup(result.filePath);
     return result.filePath;
   });
   register('backup:restore', async () => {
@@ -120,6 +134,23 @@ function registerIpc() {
     if (result.canceled || !result.filePaths[0]) return null;
     database.restore(result.filePaths[0]);
     currentUser = null;
+    return true;
+  });
+  register('backup:pick-folder', async () => {
+    requireAdmin();
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Choose backup folder',
+      properties: ['openDirectory', 'createDirectory']
+    });
+    if (result.canceled || !result.filePaths[0]) return null;
+    return result.filePaths[0];
+  });
+  register('backup:open-folder', async (folder) => {
+    requireAdmin();
+    const settings = database.getSettings();
+    if (!folder || !String(folder).startsWith(settings.backup_folder)) throw new Error('Only the configured backup folder can be opened.');
+    const error = await shell.openPath(String(folder));
+    if (error) throw new Error(error);
     return true;
   });
   register('export:pdf', async ({ title, headers, rows }) => {
@@ -155,9 +186,21 @@ app.whenReady().then(() => {
   database = new AssociationDatabase(path.join(app.getPath('userData'), 'association.sqlite'));
   registerIpc();
   createWindow();
+  startScheduledBackup();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
+});
+
+let backupTimer;
+function startScheduledBackup() {
+  const run = () => database.runScheduledBackup().catch((error) => console.error('Automatic backup failed:', error.message));
+  run();
+  backupTimer = setInterval(run, 60 * 60 * 1000);
+}
+
+app.on('will-quit', () => {
+  if (backupTimer) clearInterval(backupTimer);
 });
 
 app.on('window-all-closed', () => {

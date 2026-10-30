@@ -19,12 +19,18 @@ contextBridge.exposeInMainWorld('somiti', {
   routes: { account: invoke('routes:account') },
   receipts: { list: invoke('receipts:list') },
   audit: { list: invoke('audit:list'), loginHistory: invoke('login-history:list') },
-  trips: { save: invoke('trips:save'), delete: invoke('trips:delete') },
-  finance: { post: invoke('finance:post'), list: invoke('finance:list'), transfer: invoke('finance:transfer') },
-  dues: { generate: invoke('dues:generate'), list: invoke('dues:list'), pay: invoke('dues:pay') },
+  finance: {
+    post: invoke('finance:post'),
+    update: invoke('finance:update'),
+    delete: invoke('finance:delete'),
+    list: invoke('finance:list'),
+    transfer: invoke('finance:transfer')
+  },
+  cashbook: { get: invoke('cashbook:get'), distribute: invoke('cashbook:distribute') },
+  settings: { get: invoke('settings:get'), save: invoke('settings:save') },
   reports: { get: invoke('reports:get') },
-  files: { ownerPhoto: invoke('files:owner-photo') },
-  backup: { save: invoke('backup:save'), restore: invoke('backup:restore') },
+  files: { ownerPhoto: invoke('files:owner-photo'), logo: invoke('files:logo') },
+  backup: { save: invoke('backup:save'), restore: invoke('backup:restore'), pickFolder: invoke('backup:pick-folder'), openFolder: invoke('backup:open-folder') },
   export: { pdf: invoke('export:pdf'), excel: invoke('export:excel') },
   receipt: { open: invoke('receipt:open') }
 });

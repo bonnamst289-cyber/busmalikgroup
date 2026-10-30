@@ -5,25 +5,54 @@ const path = require('node:path');
 const PDFDocument = require('pdfkit');
 const ExcelJS = require('exceljs');
 
+const FONT_DIR = path.join(__dirname, '..', 'assets', 'fonts');
+const BUNDLED_LOGO = path.join(__dirname, '..', 'assets', 'logo.png');
+
+function fontFile(name) {
+  const file = path.join(FONT_DIR, name);
+  return fs.existsSync(file) ? file : null;
+}
+
+// pdfkit's built-in Helvetica has no Bengali glyphs, so every generated document
+// has to carry the bundled Hind Siliguri face or Bangla names print as boxes.
+function createDoc(options) {
+  const doc = new PDFDocument(options);
+  const regular = fontFile('HindSiliguri-Regular.ttf');
+  if (regular) {
+    doc.registerFont('bn-body', regular);
+    doc.registerFont('bn-head', fontFile('HindSiliguri-SemiBold.ttf') || regular);
+    doc.registerFont('bn-strong', fontFile('HindSiliguri-Bold.ttf') || regular);
+    doc.family = { body: 'bn-body', head: 'bn-head', strong: 'bn-strong' };
+    doc.font('bn-body');
+  } else {
+    doc.family = { body: 'Helvetica', head: 'Helvetica', strong: 'Helvetica' };
+  }
+  return doc;
+}
+
+function formatBdt(paisa) {
+  return `BDT ${(Number(paisa) / 100).toFixed(2)}`;
+}
+
 const TABLES = {
   owners: {
     table: 'owners',
-    fields: ['name', 'nominee_name', 'father_name', 'mobile', 'address', 'photo_path'],
+    fields: ['name', 'nominee_name', 'father_name', 'mobile', 'address', 'photo_path', 'join_date', 'status'],
     search: ['name', 'mobile']
   },
   routes: {
     table: 'routes',
-    fields: ['name', 'route_number', 'starting_point', 'destination', 'charge_paisa', 'description'],
+    fields: ['route_number', 'name', 'starting_point', 'destination', 'charge_paisa', 'status', 'description'],
     search: ['name', 'route_number', 'starting_point', 'destination']
   },
   buses: {
     table: 'buses',
-    fields: ['registration_number', 'owner_id', 'route_id', 'driver_name', 'helper_name', 'status'],
+    fields: ['registration_number', 'owner_id', 'route_id', 'driver_name', 'driver_mobile', 'helper_name', 'bus_type', 'status'],
     search: ['registration_number', 'driver_name', 'helper_name']
   },
   members: {
     table: 'members',
-    fields: ['name', 'mobile', 'address', 'membership_date', 'member_type', 'status', 'monthly_fee_paisa'],
+    fields: ['name', 'father_name', 'mobile', 'address', 'membership_date', 'member_type', 'status', 'monthly_fee_paisa'],
     search: ['name', 'mobile', 'member_type']
   },
   funds: {
@@ -44,6 +73,7 @@ const TABLES = {
 };
 
 const ALLOWED_ROLES = new Set(['admin', 'staff']);
+const FIELD_DEFAULTS = { status: 'Active' };
 
 function hashPassword(password, salt = crypto.randomBytes(16).toString('hex')) {
   const hash = crypto.scryptSync(password, salt, 64).toString('hex');
@@ -59,6 +89,38 @@ function toInteger(value, name) {
   const number = Number(value);
   if (!Number.isSafeInteger(number)) throw new Error(`${name} must be a whole number.`);
   return number;
+}
+
+function amountInWords(amountPaisa) {
+  const units = ['', 'Thousand', 'Million', 'Billion', 'Trillion'];
+  const small = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten',
+    'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+  const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+  const underThousand = (value) => {
+    const parts = [];
+    if (value >= 100) {
+      parts.push(`${small[Math.floor(value / 100)]} Hundred`);
+      value %= 100;
+    }
+    if (value >= 20) {
+      parts.push(tens[Math.floor(value / 10)]);
+      value %= 10;
+    }
+    if (value > 0) parts.push(small[value]);
+    return parts.join(' ');
+  };
+  let taka = Math.floor(amountPaisa / 100);
+  const paisa = amountPaisa % 100;
+  const groups = [];
+  let index = 0;
+  while (taka > 0 && index < units.length) {
+    const group = taka % 1000;
+    if (group) groups.unshift(`${underThousand(group)}${units[index] ? ` ${units[index]}` : ''}`);
+    taka = Math.floor(taka / 1000);
+    index += 1;
+  }
+  const takaWords = groups.join(' ') || 'Zero';
+  return `${takaWords} Taka and ${underThousand(paisa) || 'Zero'} Paisa Only`;
 }
 
 class AssociationDatabase {
@@ -94,6 +156,8 @@ class AssociationDatabase {
         mobile TEXT NOT NULL DEFAULT '',
         address TEXT NOT NULL DEFAULT '',
         photo_path TEXT NOT NULL DEFAULT '',
+        join_date TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'Active' CHECK(status IN ('Active','Inactive')),
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
       );
       CREATE TABLE IF NOT EXISTS routes (
@@ -104,6 +168,7 @@ class AssociationDatabase {
         destination TEXT NOT NULL,
         charge_paisa INTEGER NOT NULL CHECK(charge_paisa >= 0),
         description TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'Active' CHECK(status IN ('Active','Inactive')),
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
       );
       CREATE TABLE IF NOT EXISTS buses (
@@ -112,7 +177,9 @@ class AssociationDatabase {
         owner_id INTEGER NOT NULL REFERENCES owners(id) ON UPDATE CASCADE ON DELETE RESTRICT,
         route_id INTEGER REFERENCES routes(id) ON UPDATE CASCADE ON DELETE SET NULL,
         driver_name TEXT NOT NULL DEFAULT '',
+        driver_mobile TEXT NOT NULL DEFAULT '',
         helper_name TEXT NOT NULL DEFAULT '',
+        bus_type TEXT NOT NULL DEFAULT '',
         status TEXT NOT NULL DEFAULT 'Active' CHECK(status IN ('Active','Inactive','Repair')),
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
       );
@@ -120,6 +187,7 @@ class AssociationDatabase {
         id INTEGER PRIMARY KEY,
         member_code TEXT NOT NULL UNIQUE,
         name TEXT NOT NULL,
+        father_name TEXT NOT NULL DEFAULT '',
         mobile TEXT NOT NULL DEFAULT '',
         address TEXT NOT NULL DEFAULT '',
         membership_date TEXT NOT NULL,
@@ -157,6 +225,8 @@ class AssociationDatabase {
         owner_id INTEGER REFERENCES owners(id) ON DELETE SET NULL,
         member_id INTEGER REFERENCES members(id) ON DELETE SET NULL,
         bus_id INTEGER REFERENCES buses(id) ON DELETE SET NULL,
+        receiver_name TEXT NOT NULL DEFAULT '',
+        reference_number TEXT NOT NULL DEFAULT '',
         description TEXT NOT NULL DEFAULT '',
         created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -173,32 +243,15 @@ class AssociationDatabase {
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         CHECK(from_fund_id <> to_fund_id)
       );
-      CREATE TABLE IF NOT EXISTS trips (
+      CREATE TABLE IF NOT EXISTS fund_distributions (
         id INTEGER PRIMARY KEY,
-        trip_code TEXT NOT NULL UNIQUE,
+        fund_id INTEGER NOT NULL REFERENCES funds(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+        fund_name TEXT NOT NULL,
         date TEXT NOT NULL,
-        bus_id INTEGER NOT NULL REFERENCES buses(id) ON DELETE RESTRICT,
-        owner_id INTEGER NOT NULL REFERENCES owners(id) ON DELETE RESTRICT,
-        route_id INTEGER NOT NULL REFERENCES routes(id) ON DELETE RESTRICT,
-        trip_count INTEGER NOT NULL CHECK(trip_count > 0),
-        charge_paisa INTEGER NOT NULL CHECK(charge_paisa >= 0),
-        total_paisa INTEGER NOT NULL CHECK(total_paisa >= 0),
-        fund_id INTEGER NOT NULL REFERENCES funds(id) ON DELETE RESTRICT,
-        payment_status TEXT NOT NULL DEFAULT 'Paid' CHECK(payment_status IN ('Paid','Unpaid')),
-        note TEXT NOT NULL DEFAULT '',
-        transaction_id INTEGER UNIQUE REFERENCES fund_transactions(id) ON DELETE RESTRICT,
-        request_key TEXT,
+        amount_paisa INTEGER NOT NULL CHECK(amount_paisa > 0),
+        request_key TEXT NOT NULL UNIQUE,
         created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-      );
-      CREATE TABLE IF NOT EXISTS monthly_dues (
-        id INTEGER PRIMARY KEY,
-        member_id INTEGER NOT NULL REFERENCES members(id) ON DELETE RESTRICT,
-        month TEXT NOT NULL,
-        amount_paisa INTEGER NOT NULL CHECK(amount_paisa >= 0),
-        paid_paisa INTEGER NOT NULL DEFAULT 0 CHECK(paid_paisa >= 0 AND paid_paisa <= amount_paisa),
-        status TEXT NOT NULL DEFAULT 'Unpaid' CHECK(status IN ('Paid','Partial','Unpaid')),
-        UNIQUE(member_id, month)
       );
       CREATE TABLE IF NOT EXISTS receipts (
         id INTEGER PRIMARY KEY,
@@ -237,28 +290,44 @@ class AssociationDatabase {
       );
       CREATE INDEX IF NOT EXISTS idx_buses_owner ON buses(owner_id);
       CREATE INDEX IF NOT EXISTS idx_buses_route ON buses(route_id);
-      CREATE INDEX IF NOT EXISTS idx_trips_date ON trips(date);
-      CREATE INDEX IF NOT EXISTS idx_trips_bus ON trips(bus_id);
       CREATE INDEX IF NOT EXISTS idx_transactions_date ON fund_transactions(date);
       CREATE INDEX IF NOT EXISTS idx_transactions_fund ON fund_transactions(fund_id);
-      CREATE INDEX IF NOT EXISTS idx_dues_month ON monthly_dues(month);
+      CREATE INDEX IF NOT EXISTS idx_transactions_party ON fund_transactions(owner_id);
+      CREATE INDEX IF NOT EXISTS idx_transactions_source ON fund_transactions(source, source_ref);
       CREATE INDEX IF NOT EXISTS idx_receipts_date ON receipts(date);
+      CREATE INDEX IF NOT EXISTS idx_receipts_transaction ON receipts(fund_transaction_id);
+      CREATE INDEX IF NOT EXISTS idx_fund_distributions_fund ON fund_distributions(fund_id,date);
     `);
-    const tripColumns = this.db.pragma('table_info(trips)').map((column) => column.name);
-    if (!tripColumns.includes('request_key')) this.db.exec('ALTER TABLE trips ADD COLUMN request_key TEXT');
-    this.db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_trips_request_key ON trips(request_key)');
+
+    const migrations = {
+      owners: [['nominee_name', "TEXT NOT NULL DEFAULT ''"], ['father_name', "TEXT NOT NULL DEFAULT ''"], ['mobile', "TEXT NOT NULL DEFAULT ''"], ['address', "TEXT NOT NULL DEFAULT ''"], ['photo_path', "TEXT NOT NULL DEFAULT ''"], ['join_date', "TEXT NOT NULL DEFAULT ''"], ['status', "TEXT NOT NULL DEFAULT 'Active'"]],
+      routes: [['starting_point', "TEXT NOT NULL DEFAULT ''"], ['destination', "TEXT NOT NULL DEFAULT ''"], ['description', "TEXT NOT NULL DEFAULT ''"], ['status', "TEXT NOT NULL DEFAULT 'Active'"]],
+      buses: [['driver_name', "TEXT NOT NULL DEFAULT ''"], ['driver_mobile', "TEXT NOT NULL DEFAULT ''"], ['helper_name', "TEXT NOT NULL DEFAULT ''"], ['bus_type', "TEXT NOT NULL DEFAULT ''"], ['status', "TEXT NOT NULL DEFAULT 'Active'"]],
+      members: [['father_name', "TEXT NOT NULL DEFAULT ''"], ['mobile', "TEXT NOT NULL DEFAULT ''"], ['address', "TEXT NOT NULL DEFAULT ''"], ['member_type', "TEXT NOT NULL DEFAULT 'Regular'"], ['status', "TEXT NOT NULL DEFAULT 'Active'"], ['monthly_fee_paisa', 'INTEGER NOT NULL DEFAULT 0']],
+      funds: [['is_active', 'INTEGER NOT NULL DEFAULT 1']],
+      income_categories: [['is_active', 'INTEGER NOT NULL DEFAULT 1']],
+      expense_categories: [['is_active', 'INTEGER NOT NULL DEFAULT 1']],
+      fund_transactions: [['receiver_name', "TEXT NOT NULL DEFAULT ''"], ['reference_number', "TEXT NOT NULL DEFAULT ''"]]
+    };
+    for (const [table, columns] of Object.entries(migrations)) {
+      const existing = this.db.pragma(`table_info(${table})`).map((column) => column.name);
+      for (const [name, definition] of columns) {
+        if (!existing.includes(name)) this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${definition}`);
+      }
+    }
     const initialData = this.db.transaction(() => {
       const fundCount = this.db.prepare('SELECT COUNT(*) AS count FROM funds').get().count;
       if (!fundCount) {
         const insert = this.db.prepare('INSERT INTO funds(name, opening_balance_paisa) VALUES (?, 0)');
-        ['General Fund', 'Welfare Fund', 'Emergency Fund', 'Development Fund'].forEach((name) => insert.run(name));
+        ['General Fund', 'Welfare Fund', 'Emergency Fund', 'Development Fund', 'Other Fund'].forEach((name) => insert.run(name));
       }
-      const income = ['Trip Collection', 'Monthly Member Fees', 'Owner Deposits', 'Fines', 'Donations', 'Other Income'];
+      const income = ['Owner Payment', 'Route Income', 'Member Fees', 'Fines', 'Donations', 'Other Income'];
       const expense = ['Office Rent', 'Employee Salary', 'Electricity Bill', 'Office Expenses', 'Welfare Expenses', 'Emergency Expenses', 'Maintenance', 'Other Expenses'];
       const addIncome = this.db.prepare('INSERT OR IGNORE INTO income_categories(name) VALUES (?)');
       const addExpense = this.db.prepare('INSERT OR IGNORE INTO expense_categories(name) VALUES (?)');
       income.forEach((name) => addIncome.run(name));
       expense.forEach((name) => addExpense.run(name));
+      this.db.prepare("DELETE FROM income_categories WHERE name IN ('Trip Collection','Monthly Member Fees')").run();
     });
     initialData();
   }
@@ -358,7 +427,11 @@ class AssociationDatabase {
     const config = TABLES[entity];
     if (!config) throw new Error('Unknown record type.');
     this.requirePermission(user, `manage_${entity}`);
-    const values = config.fields.map((field) => data[field] === undefined ? '' : data[field]);
+    const values = config.fields.map((field) => {
+      const value = data[field];
+      if (value === undefined || value === null || value === '') return FIELD_DEFAULTS[field] ?? '';
+      return value;
+    });
     for (const field of ['charge_paisa', 'opening_balance_paisa', 'monthly_fee_paisa']) {
       const index = config.fields.indexOf(field);
       if (index >= 0) values[index] = toInteger(values[index] || 0, field);
@@ -366,6 +439,61 @@ class AssociationDatabase {
     for (const field of ['is_active']) {
       const index = config.fields.indexOf(field);
       if (index >= 0) values[index] = values[index] ? 1 : 0;
+    }
+    const fieldValues = Object.fromEntries(config.fields.map((field, index) => [field, values[index]]));
+    if (entity === 'routes') {
+      const name = String(fieldValues.name || '').trim();
+      const amount = Number(fieldValues.charge_paisa || 0);
+      if (!name) throw new Error('Route name is required.');
+      if (amount <= 0) throw new Error('Amount must be greater than zero.');
+      const id = Number(data.id || 0);
+      const old = id ? this.db.prepare('SELECT * FROM routes WHERE id=?').get(id) : null;
+      if (id && !old) throw new Error('Route not found.');
+      const routeNumber = String(fieldValues.route_number || '').trim()
+        || old?.route_number
+        || this.nextCode('RTE');
+      const patch = { ...fieldValues, name, charge_paisa: amount, route_number: routeNumber };
+      const hasRouteMetadata = ['starting_point', 'destination', 'status', 'description'].some((field) => data[field] !== undefined);
+      if (old && !hasRouteMetadata) {
+        for (const field of ['starting_point', 'destination', 'status', 'description']) patch[field] = old[field];
+      }
+      const columns = config.fields.map((field) => `${field}=?`).join(',');
+      return this.db.transaction(() => {
+        if (id) {
+          this.db.prepare(`UPDATE routes SET ${columns} WHERE id=?`).run(...config.fields.map((field) => patch[field]), id);
+          this.audit(user.id, 'update', entity, id, old, patch);
+          return this.db.prepare('SELECT * FROM routes WHERE id=?').get(id);
+        }
+        const inserted = this.db.prepare(`INSERT INTO routes(${config.fields.join(',')}) VALUES (${config.fields.map(() => '?').join(',')})`)
+          .run(...config.fields.map((field) => patch[field]));
+        this.audit(user.id, 'create', entity, inserted.lastInsertRowid, null, patch);
+        return this.db.prepare('SELECT * FROM routes WHERE id=?').get(inserted.lastInsertRowid);
+      })();
+    }
+    if (entity === 'funds') {
+      const name = String(fieldValues.name || '').trim();
+      const amount = Number(fieldValues.opening_balance_paisa || 0);
+      if (!name) throw new Error('Fund name is required.');
+      if (amount < 0) throw new Error('Amount cannot be negative.');
+      const id = Number(data.id || 0);
+      const isActive = data.is_active === undefined
+        ? (id ? this.db.prepare('SELECT is_active FROM funds WHERE id=?').get(id)?.is_active ?? 1 : 1)
+        : (fieldValues.is_active ? 1 : 0);
+      const patch = { ...fieldValues, name, opening_balance_paisa: amount, is_active: isActive };
+      const columns = config.fields.map((field) => `${field}=?`).join(',');
+      return this.db.transaction(() => {
+        if (id) {
+          const old = this.db.prepare('SELECT * FROM funds WHERE id=?').get(id);
+          if (!old) throw new Error('Fund not found.');
+          this.db.prepare(`UPDATE funds SET ${columns} WHERE id=?`).run(...config.fields.map((field) => patch[field]), id);
+          this.audit(user.id, 'update', entity, id, old, patch);
+          return this.db.prepare('SELECT * FROM funds WHERE id=?').get(id);
+        }
+        const inserted = this.db.prepare(`INSERT INTO funds(${config.fields.join(',')}) VALUES (${config.fields.map(() => '?').join(',')})`)
+          .run(...config.fields.map((field) => patch[field]));
+        this.audit(user.id, 'create', entity, inserted.lastInsertRowid, null, patch);
+        return this.db.prepare(`SELECT * FROM funds WHERE id=?`).get(inserted.lastInsertRowid);
+      })();
     }
     if (entity === 'buses') {
       for (const field of ['owner_id', 'route_id']) {
@@ -410,31 +538,32 @@ class AssociationDatabase {
     this.requirePermission(user, `delete_${entity}`);
     const old = this.db.prepare(`SELECT * FROM ${config.table} WHERE id=?`).get(id);
     if (!old) throw new Error('Record not found.');
-    this.db.prepare(`DELETE FROM ${config.table} WHERE id=?`).run(id);
-    this.audit(user.id, 'delete', entity, id, old, null);
-    return true;
+    return this.db.transaction(() => {
+      this.db.prepare(`DELETE FROM ${config.table} WHERE id=?`).run(id);
+      this.audit(user.id, 'delete', entity, id, old, null);
+      return true;
+    })();
   }
 
   ownerAccount(user, ownerId) {
     const owner = this.db.prepare('SELECT * FROM owners WHERE id=?').get(ownerId);
     if (!owner) throw new Error('Owner not found.');
     const buses = this.db.prepare(`SELECT b.*,r.name AS route_name FROM buses b LEFT JOIN routes r ON r.id=b.route_id WHERE b.owner_id=? ORDER BY b.registration_number`).all(ownerId);
-    const trips = this.db.prepare(`SELECT t.*,b.registration_number,r.name AS route_name FROM trips t
-      JOIN buses b ON b.id=t.bus_id JOIN routes r ON r.id=t.route_id WHERE t.owner_id=? ORDER BY t.date DESC,t.id DESC`).all(ownerId);
-    const payments = this.db.prepare(`SELECT * FROM fund_transactions WHERE owner_id=? ORDER BY date DESC,id DESC`).all(ownerId);
-    const totals = this.db.prepare(`SELECT COUNT(*) AS trips,COALESCE(SUM(total_paisa),0) AS trip_total,
-      COALESCE(SUM(CASE WHEN payment_status='Unpaid' THEN total_paisa ELSE 0 END),0) AS outstanding
-      FROM trips WHERE owner_id=?`).get(ownerId);
-    return { owner, buses, trips, payments, totals };
+    const payments = this.db.prepare(`SELECT t.*,f.name AS fund_name FROM fund_transactions t JOIN funds f ON f.id=t.fund_id
+      WHERE t.owner_id=? ORDER BY t.date DESC,t.id DESC`).all(ownerId);
+    const totals = this.db.prepare(`SELECT COALESCE(SUM(CASE WHEN transaction_type='income' THEN amount_paisa ELSE 0 END),0) AS income,
+      COALESCE(SUM(CASE WHEN transaction_type='expense' THEN amount_paisa ELSE 0 END),0) AS expense
+      FROM fund_transactions WHERE owner_id=?`).get(ownerId);
+    return { owner, buses, payments, totals };
   }
 
   busAccount(user, busId) {
     const bus = this.db.prepare(`SELECT b.*,o.name AS owner_name,o.owner_code,r.name AS route_name,r.charge_paisa
       FROM buses b JOIN owners o ON o.id=b.owner_id LEFT JOIN routes r ON r.id=b.route_id WHERE b.id=?`).get(busId);
     if (!bus) throw new Error('Bus not found.');
-    const trips = this.db.prepare('SELECT * FROM trips WHERE bus_id=? ORDER BY date DESC,id DESC').all(busId);
-    const payments = this.db.prepare('SELECT * FROM fund_transactions WHERE bus_id=? ORDER BY date DESC,id DESC').all(busId);
-    return { bus, trips, payments };
+    const payments = this.db.prepare(`SELECT t.*,f.name AS fund_name FROM fund_transactions t JOIN funds f ON f.id=t.fund_id
+      WHERE t.bus_id=? ORDER BY t.date DESC,t.id DESC`).all(busId);
+    return { bus, payments };
   }
 
   routeAccount(user, routeId) {
@@ -442,12 +571,7 @@ class AssociationDatabase {
     if (!route) throw new Error('Route not found.');
     const buses = this.db.prepare(`SELECT b.*,o.name AS owner_name FROM buses b
       JOIN owners o ON o.id=b.owner_id WHERE b.route_id=? ORDER BY b.registration_number`).all(routeId);
-    const trips = this.db.prepare(`SELECT t.*,b.registration_number,o.name AS owner_name FROM trips t
-      JOIN buses b ON b.id=t.bus_id JOIN owners o ON o.id=t.owner_id WHERE t.route_id=? ORDER BY t.date DESC,t.id DESC`).all(routeId);
-    return {
-      route, buses, trips,
-      collection_paisa: trips.filter((trip) => trip.payment_status === 'Paid').reduce((total, trip) => total + trip.total_paisa, 0)
-    };
+    return { route, buses };
   }
 
   nextCode(prefix) {
@@ -462,93 +586,6 @@ class AssociationDatabase {
     return this.db.prepare('SELECT * FROM receipts WHERE id=?').get(result.lastInsertRowid);
   }
 
-  saveTrip(user, data) {
-    this.requirePermission(user, 'manage_trips');
-    const id = Number(data.id || 0);
-    if (id && user.role !== 'admin') throw new Error('Only an administrator can correct a saved trip.');
-    const tripCount = toInteger(data.trip_count, 'Trip count');
-    if (tripCount <= 0) throw new Error('Trip count must be greater than zero.');
-    const bus = this.db.prepare(`SELECT b.*,r.id AS actual_route_id,r.charge_paisa,o.id AS actual_owner_id
-      FROM buses b JOIN routes r ON r.id=b.route_id JOIN owners o ON o.id=b.owner_id WHERE b.id=?`).get(data.bus_id);
-    if (!bus) throw new Error('Select a bus assigned to a route.');
-    const amount = tripCount * bus.charge_paisa;
-    if (!Number.isSafeInteger(amount)) throw new Error('Trip amount is too large.');
-    const date = String(data.date || '');
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('Enter a valid trip date.');
-    const fundId = toInteger(data.fund_id, 'Fund');
-    const paymentStatus = data.payment_status === 'Unpaid' ? 'Unpaid' : 'Paid';
-    const requestKey = String(data.request_key || this.nextCode('REQ'));
-    return this.db.transaction(() => {
-      if (!id) {
-        const duplicate = this.db.prepare('SELECT * FROM trips WHERE request_key=?').get(requestKey);
-        if (duplicate) {
-          const receipt = duplicate.transaction_id
-            ? this.db.prepare('SELECT * FROM receipts WHERE fund_transaction_id=? ORDER BY id LIMIT 1').get(duplicate.transaction_id)
-            : null;
-          return { trip: duplicate, receipt };
-        }
-        const tripCode = this.nextCode('TRP');
-        let transactionId = null;
-        if (paymentStatus === 'Paid' && amount > 0) {
-          const tx = this.db.prepare(`INSERT INTO fund_transactions(fund_id,date,transaction_type,category,amount_paisa,source,source_ref,owner_id,bus_id,description,created_by)
-            VALUES (?,?,'income','Trip Collection',?,'trip',?, ?, ?, ?, ?)`)
-            .run(fundId, date, amount, tripCode, bus.actual_owner_id, bus.id, String(data.note || ''), user.id);
-          transactionId = tx.lastInsertRowid;
-        }
-        const created = this.db.prepare(`INSERT INTO trips(trip_code,date,bus_id,owner_id,route_id,trip_count,charge_paisa,total_paisa,fund_id,payment_status,note,transaction_id,request_key,created_by)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(tripCode, date, bus.id, bus.actual_owner_id, bus.actual_route_id, tripCount,
-          bus.charge_paisa, amount, fundId, paymentStatus, String(data.note || ''), transactionId, requestKey, user.id);
-        const receipt = paymentStatus === 'Paid' && amount > 0
-          ? this.insertReceipt(user, transactionId, { date, category: 'Trip Collection', amount_paisa: amount, owner_id: bus.actual_owner_id, bus_id: bus.id, route_id: bus.actual_route_id })
-          : null;
-        this.audit(user.id, 'create', 'trip', created.lastInsertRowid, null, data);
-        return { trip: this.db.prepare('SELECT * FROM trips WHERE id=?').get(created.lastInsertRowid), receipt };
-      }
-      const old = this.db.prepare('SELECT * FROM trips WHERE id=?').get(id);
-      if (!old) throw new Error('Trip not found.');
-      const newStatus = paymentStatus;
-      if (newStatus === 'Unpaid' && old.transaction_id) {
-        throw new Error('Paid trips cannot be changed to unpaid; use an authorized correcting transaction.');
-      }
-      if (old.transaction_id) {
-        this.db.prepare(`UPDATE fund_transactions SET fund_id=?,date=?,amount_paisa=?,owner_id=?,bus_id=?,description=? WHERE id=?`)
-          .run(fundId, date, newStatus === 'Paid' ? amount : old.total_paisa, bus.actual_owner_id, bus.id, String(data.note || ''), old.transaction_id);
-        this.db.prepare(`UPDATE receipts SET date=?,amount_paisa=?,owner_id=?,bus_id=?,route_id=?
-          WHERE fund_transaction_id=?`).run(date, amount, bus.actual_owner_id, bus.id, bus.actual_route_id, old.transaction_id);
-      } else if (newStatus === 'Paid' && amount > 0) {
-        const tx = this.db.prepare(`INSERT INTO fund_transactions(fund_id,date,transaction_type,category,amount_paisa,source,source_ref,owner_id,bus_id,description,created_by)
-          VALUES (?,?,'income','Trip Collection',?,'trip',?,?,?,?,?)`)
-          .run(fundId, date, amount, old.trip_code, bus.actual_owner_id, bus.id, String(data.note || ''), user.id);
-        old.transaction_id = tx.lastInsertRowid;
-        this.db.prepare('INSERT INTO receipts(receipt_number,date,category,amount_paisa,owner_id,bus_id,route_id,fund_transaction_id,created_by) VALUES (?,?,?,?,?,?,?,?,?)')
-          .run(this.nextCode('RCP'), date, 'Trip Collection', amount, bus.actual_owner_id, bus.id, bus.actual_route_id, old.transaction_id, user.id);
-      }
-      this.db.prepare(`UPDATE trips SET date=?,bus_id=?,owner_id=?,route_id=?,trip_count=?,charge_paisa=?,total_paisa=?,fund_id=?,payment_status=?,note=?,transaction_id=? WHERE id=?`)
-        .run(date, bus.id, bus.actual_owner_id, bus.actual_route_id, tripCount, bus.charge_paisa, amount, fundId, newStatus, String(data.note || ''), old.transaction_id, id);
-      this.audit(user.id, 'correct', 'trip', id, old, data);
-      return { trip: this.db.prepare('SELECT * FROM trips WHERE id=?').get(id), receipt: null };
-    })();
-  }
-
-  deleteTrip(user, id) {
-    this.requirePermission(user, 'delete_trips');
-    const old = this.db.prepare('SELECT * FROM trips WHERE id=?').get(id);
-    if (!old) throw new Error('Trip not found.');
-    this.db.transaction(() => {
-      if (old.transaction_id) {
-        const tx = this.db.prepare('SELECT * FROM fund_transactions WHERE id=?').get(old.transaction_id);
-        if (tx) {
-          this.db.prepare(`INSERT INTO fund_transactions(fund_id,date,transaction_type,category,amount_paisa,source,source_ref,owner_id,bus_id,description,created_by)
-            VALUES (?,?,'expense','Trip Correction',?,'trip-reversal',?,?,?,?,?)`)
-            .run(tx.fund_id, new Date().toISOString().slice(0, 10), tx.amount_paisa, old.trip_code, tx.owner_id, tx.bus_id, `Reversal for deleted trip ${old.trip_code}`, user.id);
-        }
-      }
-      this.db.prepare('DELETE FROM trips WHERE id=?').run(id);
-      this.audit(user.id, 'delete-with-reversal', 'trip', id, old, null);
-    })();
-    return true;
-  }
-
   postTransaction(user, data) {
     this.requirePermission(user, 'manage_finance');
     const amount = toInteger(data.amount_paisa, 'Amount');
@@ -558,17 +595,71 @@ class AssociationDatabase {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('Enter a valid transaction date.');
     const result = this.db.transaction(() => {
       const sourceRef = this.nextCode(type === 'income' ? 'INC' : 'EXP');
-      const inserted = this.db.prepare(`INSERT INTO fund_transactions(fund_id,date,transaction_type,category,amount_paisa,source,source_ref,owner_id,member_id,bus_id,description,created_by)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).run(toInteger(data.fund_id, 'Fund'), date, type, String(data.category || (type === 'income' ? 'Other Income' : 'Other Expenses')),
-        amount, type, sourceRef, data.owner_id || null, data.member_id || null, data.bus_id || null, String(data.description || ''), user.id);
+      const category = String(data.category || (type === 'income' ? 'Other Income' : 'Other Expenses'));
+      const routeId = this.routeOfBus(data.bus_id);
+      const inserted = this.db.prepare(`INSERT INTO fund_transactions(fund_id,date,transaction_type,category,amount_paisa,source,source_ref,owner_id,member_id,bus_id,
+        receiver_name,reference_number,description,created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+        .run(toInteger(data.fund_id, 'Fund'), date, type, category, amount, type, sourceRef,
+          data.owner_id || null, data.member_id || null, data.bus_id || null,
+          String(data.receiver_name || ''), String(data.reference_number || ''), String(data.description || ''), user.id);
       const receipt = type === 'income' ? this.insertReceipt(user, inserted.lastInsertRowid, {
-        date, category: String(data.category || 'Other Income'), amount_paisa: amount,
-        owner_id: data.owner_id, member_id: data.member_id, bus_id: data.bus_id, route_id: null
+        date, category, amount_paisa: amount,
+        owner_id: data.owner_id, member_id: data.member_id, bus_id: data.bus_id, route_id: routeId
       }) : null;
       this.audit(user.id, 'create', 'fund_transaction', inserted.lastInsertRowid, null, data);
       return { transaction: this.db.prepare('SELECT * FROM fund_transactions WHERE id=?').get(inserted.lastInsertRowid), receipt };
     })();
     return result;
+  }
+
+  routeOfBus(busId) {
+    if (!busId) return null;
+    return this.db.prepare('SELECT route_id FROM buses WHERE id=?').get(Number(busId))?.route_id || null;
+  }
+
+  updateTransaction(user, data) {
+    if (user.role !== 'admin') throw new Error('Only an administrator can correct a saved transaction.');
+    const id = toInteger(data.id, 'Transaction');
+    const old = this.db.prepare('SELECT * FROM fund_transactions WHERE id=?').get(id);
+    if (!old) throw new Error('Transaction not found.');
+    const amount = toInteger(data.amount_paisa, 'Amount');
+    if (amount <= 0) throw new Error('Amount must be greater than zero.');
+    const date = String(data.date || old.date);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('Enter a valid transaction date.');
+    return this.db.transaction(() => {
+      if (old.transaction_type === 'income') {
+        const total = this.db.prepare("SELECT COALESCE(SUM(amount_paisa),0) AS total FROM fund_transactions WHERE transaction_type='income'").get().total;
+        this.assertCashInCoversDistributions(total - old.amount_paisa + amount);
+      }
+      const category = String(data.category || old.category);
+      const routeId = this.routeOfBus(data.bus_id);
+      this.db.prepare(`UPDATE fund_transactions SET fund_id=?,date=?,category=?,amount_paisa=?,owner_id=?,member_id=?,bus_id=?,
+        receiver_name=?,reference_number=?,description=? WHERE id=?`)
+        .run(toInteger(data.fund_id, 'Fund'), date, category, amount, data.owner_id || null, data.member_id || null, data.bus_id || null,
+          String(data.receiver_name ?? old.receiver_name), String(data.reference_number ?? old.reference_number), String(data.description ?? old.description), id);
+      if (old.transaction_type === 'income') {
+        this.db.prepare('UPDATE receipts SET date=?,category=?,amount_paisa=?,owner_id=?,member_id=?,bus_id=?,route_id=? WHERE fund_transaction_id=?')
+          .run(date, category, amount, data.owner_id || null, data.member_id || null, data.bus_id || null, routeId, id);
+      }
+      this.audit(user.id, 'correct', 'fund_transaction', id, old, data);
+      return this.db.prepare('SELECT * FROM fund_transactions WHERE id=?').get(id);
+    })();
+  }
+
+  deleteTransaction(user, id) {
+    if (user.role !== 'admin') throw new Error('Only an administrator can delete a transaction.');
+    const old = this.db.prepare('SELECT * FROM fund_transactions WHERE id=?').get(Number(id));
+    if (!old) throw new Error('Transaction not found.');
+    this.db.transaction(() => {
+      if (old.transaction_type === 'income') {
+        const total = this.db.prepare("SELECT COALESCE(SUM(amount_paisa),0) AS total FROM fund_transactions WHERE transaction_type='income'").get().total;
+        this.assertCashInCoversDistributions(total - old.amount_paisa);
+      }
+      this.db.prepare('DELETE FROM receipts WHERE fund_transaction_id=?').run(old.id);
+      this.db.prepare('DELETE FROM fund_transactions WHERE id=?').run(old.id);
+      this.audit(user.id, 'delete', 'fund_transaction', old.id, old, null);
+    })();
+    return true;
   }
 
   listTransactions(user, filters = {}) {
@@ -596,14 +687,6 @@ class AssociationDatabase {
       LEFT JOIN users u ON u.id=l.user_id ORDER BY l.id DESC LIMIT 200`).all();
   }
 
-  listDues(user, month = '') {
-    const validMonth = /^\d{4}-\d{2}$/.test(String(month)) ? String(month) : '';
-    return this.db.prepare(`SELECT d.*,m.member_code,m.name AS member_name,m.mobile
-      FROM monthly_dues d JOIN members m ON m.id=d.member_id
-      ${validMonth ? 'WHERE d.month=?' : ''}
-      ORDER BY d.month DESC,m.name`).all(...(validMonth ? [validMonth] : []));
-  }
-
   transfer(user, data) {
     this.requirePermission(user, 'manage_finance');
     const amount = toInteger(data.amount_paisa, 'Amount');
@@ -617,43 +700,60 @@ class AssociationDatabase {
     return id;
   }
 
-  generateDues(user, month) {
-    this.requirePermission(user, 'manage_dues');
-    if (!/^\d{4}-\d{2}$/.test(String(month))) throw new Error('Select a month in YYYY-MM format.');
-    return this.db.transaction(() => {
-      const members = this.db.prepare(`SELECT id,monthly_fee_paisa FROM members WHERE status='Active'`).all();
-      const insert = this.db.prepare(`INSERT OR IGNORE INTO monthly_dues(member_id,month,amount_paisa) VALUES (?,?,?)`);
-      let generated = 0;
-      for (const member of members) generated += insert.run(member.id, month, member.monthly_fee_paisa).changes;
-      this.audit(user.id, 'generate', 'monthly_dues', month, null, { generated });
-      return { generated, total_active: members.length };
-    })();
+  cashbookTotals() {
+    const cashIn = this.db.prepare("SELECT COALESCE(SUM(amount_paisa),0) AS total FROM fund_transactions WHERE transaction_type='income'").get().total;
+    const distributed = this.db.prepare('SELECT COALESCE(SUM(amount_paisa),0) AS total FROM fund_distributions').get().total;
+    return { cash_in_paisa: cashIn, distributed_paisa: distributed, available_paisa: cashIn - distributed };
   }
 
-  payDue(user, data) {
-    this.requirePermission(user, 'manage_dues');
-    const amount = toInteger(data.amount_paisa, 'Amount');
-    if (amount <= 0) throw new Error('Amount must be greater than zero.');
+  assertCashInCoversDistributions(cashIn) {
+    const distributed = this.db.prepare('SELECT COALESCE(SUM(amount_paisa),0) AS total FROM fund_distributions').get().total;
+    if (cashIn < distributed) throw new Error('This change would make total income lower than the amount already distributed.');
+  }
+
+  cashbook(user) {
+    const totals = this.cashbookTotals();
+    const income = this.db.prepare(`SELECT t.id,t.date,t.category,t.amount_paisa,
+      COALESCE(o.name,m.name,'') AS party,b.registration_number
+      FROM fund_transactions t LEFT JOIN owners o ON o.id=t.owner_id
+      LEFT JOIN members m ON m.id=t.member_id LEFT JOIN buses b ON b.id=t.bus_id
+      WHERE t.transaction_type='income' ORDER BY t.date DESC,t.id DESC`).all();
+    const distributions = this.db.prepare(`SELECT id,fund_id,fund_name,date,amount_paisa,request_key,created_at
+      FROM fund_distributions ORDER BY date DESC,id DESC`).all();
+    const funds = this.db.prepare(`SELECT f.id,f.name,
+      f.opening_balance_paisa + COALESCE(SUM(d.amount_paisa),0) AS balance_paisa,
+      COALESCE(SUM(d.amount_paisa),0) AS distributed_paisa
+      FROM funds f LEFT JOIN fund_distributions d ON d.fund_id=f.id
+      WHERE f.is_active=1 GROUP BY f.id ORDER BY f.name`).all();
+    return { totals, income, distributions, funds };
+  }
+
+  distributeCash(user, data) {
+    this.requirePermission(user, 'manage_finance');
+    const amount = toInteger(data.amount_paisa, 'Distribution amount');
+    if (amount <= 0) throw new Error('Distribution amount must be greater than zero.');
+    const fundId = toInteger(data.fund_id, 'Fund');
+    const requestKey = String(data.request_key || '').trim();
+    if (!requestKey || requestKey.length > 100) throw new Error('A valid distribution request key is required.');
     return this.db.transaction(() => {
-      const due = this.db.prepare('SELECT * FROM monthly_dues WHERE id=?').get(data.due_id);
-      if (!due) throw new Error('Monthly due not found.');
-      if (due.paid_paisa + amount > due.amount_paisa) throw new Error('Payment cannot exceed the remaining due.');
-      const member = this.db.prepare('SELECT * FROM members WHERE id=?').get(due.member_id);
-      const fundId = toInteger(data.fund_id, 'Fund');
-      const date = String(data.date || new Date().toISOString().slice(0, 10));
-      const sourceRef = this.nextCode('DUES');
-      const tx = this.db.prepare(`INSERT INTO fund_transactions(fund_id,date,transaction_type,category,amount_paisa,source,source_ref,member_id,description,created_by)
-        VALUES (?,?,'income','Monthly Member Fees',?,'monthly-due',?,?,?,?)`)
-        .run(fundId, date, amount, sourceRef, member.id, `Monthly fee ${due.month}`, user.id);
-      const paid = due.paid_paisa + amount;
-      this.db.prepare('UPDATE monthly_dues SET paid_paisa=?,status=? WHERE id=?')
-        .run(paid, paid === due.amount_paisa ? 'Paid' : 'Partial', due.id);
-      const receipt = this.insertReceipt(user, tx.lastInsertRowid, {
-        date, category: `Monthly Member Fees (${due.month})`, amount_paisa: amount, member_id: member.id
-      });
-      this.audit(user.id, 'payment', 'monthly_due', due.id, due, { paid_paisa: paid });
-      return { receipt, remaining_paisa: due.amount_paisa - paid };
-    })();
+      const existing = this.db.prepare('SELECT * FROM fund_distributions WHERE request_key=?').get(requestKey);
+      if (existing) {
+        if (existing.fund_id !== fundId || existing.amount_paisa !== amount) {
+          throw new Error('This distribution request key was already used for a different distribution.');
+        }
+        return { distribution: existing, duplicate: true, totals: this.cashbookTotals() };
+      }
+      const fund = this.db.prepare('SELECT id,name FROM funds WHERE id=? AND is_active=1').get(fundId);
+      if (!fund) throw new Error('Choose an active fund.');
+      const totals = this.cashbookTotals();
+      if (amount > totals.available_paisa) throw new Error('Distribution cannot exceed the available cash balance.');
+      const date = new Date().toISOString().slice(0, 10);
+      const inserted = this.db.prepare(`INSERT INTO fund_distributions(fund_id,fund_name,date,amount_paisa,request_key,created_by)
+        VALUES (?,?,?,?,?,?)`).run(fund.id, fund.name, date, amount, requestKey, user.id);
+      const distribution = this.db.prepare('SELECT * FROM fund_distributions WHERE id=?').get(inserted.lastInsertRowid);
+      this.audit(user.id, 'distribute', 'fund_distribution', distribution.id, null, distribution);
+      return { distribution, duplicate: false, totals: this.cashbookTotals() };
+    }).immediate();
   }
 
   dashboard(user) {
@@ -668,15 +768,19 @@ class AssociationDatabase {
       FROM funds f LEFT JOIN fund_transactions t ON t.fund_id=f.id WHERE f.is_active=1 GROUP BY f.id`).all();
     return {
       totals: {
-        buses: count('buses'), owners: count('owners'), routes: count('routes'), trips: count('trips'),
+        buses: count('buses'), owners: count('owners'), routes: count('routes'), members: count('members'),
         today_collection_paisa: sum(`SELECT SUM(amount_paisa) AS value FROM fund_transactions WHERE transaction_type='income' AND date=?`, today),
         month_collection_paisa: sum(`SELECT SUM(amount_paisa) AS value FROM fund_transactions WHERE transaction_type='income' AND substr(date,1,7)=?`, month),
+        month_expenses_paisa: sum(`SELECT SUM(amount_paisa) AS value FROM fund_transactions WHERE transaction_type='expense' AND substr(date,1,7)=?`, month),
         expenses_paisa: sum(`SELECT SUM(amount_paisa) AS value FROM fund_transactions WHERE transaction_type='expense'`),
-        dues_paisa: sum('SELECT SUM(amount_paisa-paid_paisa) AS value FROM monthly_dues')
-          + sum(`SELECT SUM(total_paisa) AS value FROM trips WHERE payment_status='Unpaid'`),
         funds_paisa: balances.reduce((total, fund) => total + fund.balance_paisa, 0)
       },
       funds: balances,
+      monthly: this.db.prepare(`SELECT substr(date,1,7) AS period,
+        SUM(CASE WHEN transaction_type='income' THEN amount_paisa ELSE 0 END) AS income_paisa,
+        SUM(CASE WHEN transaction_type='expense' THEN amount_paisa ELSE 0 END) AS expense_paisa
+        FROM fund_transactions WHERE date>=date(?,'-11 months','start of month')
+        GROUP BY period ORDER BY period`).all(`${month}-01`),
       recent: this.db.prepare(`SELECT t.id,t.date,t.transaction_type,t.category,t.amount_paisa,t.description,
         COALESCE(o.name,m.name,'') AS party FROM fund_transactions t
         LEFT JOIN owners o ON o.id=t.owner_id LEFT JOIN members m ON m.id=t.member_id
@@ -688,28 +792,27 @@ class AssociationDatabase {
     const from = String(filters.from || '0001-01-01');
     const to = String(filters.to || '9999-12-31');
     const type = String(filters.type || 'transactions');
-    if (type === 'trips') return this.db.prepare(`SELECT t.id,t.trip_code,t.date,t.bus_id,t.owner_id,t.route_id,t.fund_id,t.note,
-      b.registration_number,o.name AS owner,r.name AS route,t.trip_count,t.charge_paisa,t.total_paisa,t.payment_status,
-      (SELECT id FROM receipts WHERE fund_transaction_id=t.transaction_id ORDER BY id LIMIT 1) AS receipt_id
-      FROM trips t JOIN buses b ON b.id=t.bus_id JOIN owners o ON o.id=t.owner_id JOIN routes r ON r.id=t.route_id
-      WHERE t.date BETWEEN ? AND ? ORDER BY t.date DESC,t.id DESC`).all(from, to);
-    if (type === 'dues') return this.db.prepare(`SELECT m.member_code,m.name,m.mobile,d.month,d.amount_paisa,d.paid_paisa,d.amount_paisa-d.paid_paisa AS due_paisa,d.status
-      FROM monthly_dues d JOIN members m ON m.id=d.member_id WHERE d.month BETWEEN ? AND ? ORDER BY d.month DESC,m.name`).all(from.slice(0, 7), to.slice(0, 7));
-    if (type === 'owners') return this.db.prepare(`SELECT o.owner_code,o.name,o.mobile,
+    if (type === 'receipts') return this.db.prepare(`SELECT r.receipt_number,r.date,r.category,r.amount_paisa,
+      COALESCE(o.name,m.name,'') AS party,b.registration_number AS bus
+      FROM receipts r LEFT JOIN owners o ON o.id=r.owner_id LEFT JOIN members m ON m.id=r.member_id
+      LEFT JOIN buses b ON b.id=r.bus_id WHERE r.date BETWEEN ? AND ? ORDER BY r.date DESC,r.id DESC`).all(from, to);
+    if (type === 'owners') return this.db.prepare(`SELECT o.owner_code,o.name,o.mobile,o.join_date,o.status,
       (SELECT COUNT(*) FROM buses b WHERE b.owner_id=o.id) AS buses,
-      (SELECT COUNT(*) FROM trips t WHERE t.owner_id=o.id AND t.date BETWEEN ? AND ?) AS trips,
-      COALESCE((SELECT SUM(t.total_paisa) FROM trips t WHERE t.owner_id=o.id AND t.date BETWEEN ? AND ?),0) AS trip_total_paisa,
-      COALESCE((SELECT SUM(ft.amount_paisa) FROM fund_transactions ft WHERE ft.owner_id=o.id AND ft.transaction_type='income' AND ft.date BETWEEN ? AND ?),0) AS payments_paisa
-      FROM owners o ORDER BY o.name`).all(from, to, from, to, from, to);
-    if (type === 'buses') return this.db.prepare(`SELECT b.registration_number,o.name AS owner,r.name AS route,b.status,
-      COUNT(t.id) AS trips,COALESCE(SUM(t.total_paisa),0) AS trip_total_paisa
+      COALESCE((SELECT SUM(ft.amount_paisa) FROM fund_transactions ft WHERE ft.owner_id=o.id AND ft.transaction_type='income' AND ft.date BETWEEN ? AND ?),0) AS income_paisa,
+      COALESCE((SELECT SUM(ft.amount_paisa) FROM fund_transactions ft WHERE ft.owner_id=o.id AND ft.transaction_type='expense' AND ft.date BETWEEN ? AND ?),0) AS expense_paisa
+      FROM owners o ORDER BY o.name`).all(from, to, from, to);
+    if (type === 'buses') return this.db.prepare(`SELECT b.registration_number,o.name AS owner,r.name AS route,b.bus_type,b.status,
+      COALESCE((SELECT SUM(t.amount_paisa) FROM fund_transactions t WHERE t.bus_id=b.id AND t.transaction_type='income' AND t.date BETWEEN ? AND ?),0) AS income_paisa,
+      COALESCE((SELECT SUM(t.amount_paisa) FROM fund_transactions t WHERE t.bus_id=b.id AND t.transaction_type='expense' AND t.date BETWEEN ? AND ?),0) AS expense_paisa
       FROM buses b JOIN owners o ON o.id=b.owner_id LEFT JOIN routes r ON r.id=b.route_id
-      LEFT JOIN trips t ON t.bus_id=b.id AND t.date BETWEEN ? AND ? GROUP BY b.id ORDER BY b.registration_number`).all(from, to);
-    if (type === 'routes') return this.db.prepare(`SELECT r.route_number,r.name,r.starting_point,r.destination,
-      (SELECT COUNT(*) FROM buses b WHERE b.route_id=r.id) AS buses,
-      COUNT(t.id) AS trips,COALESCE(SUM(CASE WHEN t.payment_status='Paid' THEN t.total_paisa ELSE 0 END),0) AS collection_paisa
-      FROM routes r LEFT JOIN trips t ON t.route_id=r.id AND t.date BETWEEN ? AND ?
-      GROUP BY r.id ORDER BY r.route_number`).all(from, to);
+      ORDER BY b.registration_number`).all(from, to, from, to);
+    if (type === 'routes') return this.db.prepare(`SELECT r.route_number,r.name,r.starting_point,r.destination,r.charge_paisa,r.status,
+      (SELECT COUNT(*) FROM buses b WHERE b.route_id=r.id) AS buses
+      FROM routes r ORDER BY r.route_number`).all();
+    if (type === 'members') return this.db.prepare(`SELECT m.member_code,m.name,m.father_name,m.mobile,m.member_type,m.status,m.membership_date,
+      m.monthly_fee_paisa,
+      COALESCE((SELECT SUM(t.amount_paisa) FROM fund_transactions t WHERE t.member_id=m.id AND t.transaction_type='income' AND t.date BETWEEN ? AND ?),0) AS paid_paisa
+      FROM members m ORDER BY m.name`).all(from, to);
     if (type === 'funds') return this.db.prepare(`SELECT f.name,
       COALESCE(SUM(CASE WHEN t.transaction_type='income' THEN t.amount_paisa ELSE 0 END),0) AS income_paisa,
       COALESCE(SUM(CASE WHEN t.transaction_type='expense' THEN t.amount_paisa ELSE 0 END),0) AS expense_paisa,
@@ -736,10 +839,33 @@ class AssociationDatabase {
       WHERE t.date BETWEEN ? AND ? ORDER BY t.date DESC,t.id DESC`).all(from, to);
   }
 
-  backup(destination) {
-    this.db.backup(destination);
+  async backup(destination) {
+    await this.db.backup(destination);
     const photos = path.join(path.dirname(this.filePath), 'owner-photos');
     if (fs.existsSync(photos)) fs.cpSync(photos, path.join(path.dirname(destination), 'owner-photos'), { recursive: true, force: true, errorOnExist: false });
+  }
+
+  pruneScheduledBackups(root, keepCopies) {
+    const folders = fs.readdirSync(root, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && /^daily-\d{4}-\d{2}-\d{2}$/.test(entry.name))
+      .map((entry) => entry.name).sort();
+    for (const folder of folders.slice(0, Math.max(0, folders.length - keepCopies))) {
+      fs.rmSync(path.join(root, folder), { recursive: true, force: true });
+    }
+  }
+
+  async runScheduledBackup() {
+    const settings = this.getSettings();
+    if (!settings.auto_backup || !settings.backup_folder) return null;
+    const today = new Date().toISOString().slice(0, 10);
+    const folder = path.join(settings.backup_folder, `daily-${today}`);
+    if (fs.existsSync(folder)) return null;
+    fs.mkdirSync(folder, { recursive: true });
+    const destination = path.join(folder, 'association.sqlite');
+    await this.backup(destination);
+    this.pruneScheduledBackups(settings.backup_folder, settings.keep_copies);
+    this.audit(null, 'auto-backup', 'settings', destination, null, null);
+    return destination;
   }
 
   restore(source) {
@@ -748,7 +874,7 @@ class AssociationDatabase {
     try {
       const integrity = check.pragma('integrity_check', { simple: true });
       if (integrity !== 'ok') throw new Error(`Backup integrity check failed: ${integrity}`);
-      for (const table of ['users', 'owners', 'buses', 'routes', 'trips', 'funds', 'fund_transactions', 'members', 'monthly_dues']) {
+      for (const table of ['users', 'owners', 'buses', 'routes', 'funds', 'fund_transactions', 'members', 'receipts']) {
         check.prepare(`SELECT 1 FROM sqlite_master WHERE type='table' AND name=?`).get(table) || (() => { throw new Error(`Backup is missing required table: ${table}`); })();
       }
     } finally {
@@ -759,6 +885,9 @@ class AssociationDatabase {
       const sidecar = `${this.filePath}${suffix}`;
       if (fs.existsSync(sidecar)) fs.unlinkSync(sidecar);
     }
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const safetyCopy = `${this.filePath.replace(/\.sqlite$/, '')}.before-restore-${stamp}.sqlite`;
+    fs.copyFileSync(this.filePath, safetyCopy);
     fs.copyFileSync(source, this.filePath);
     const sourcePhotos = path.join(path.dirname(source), 'owner-photos');
     if (fs.existsSync(sourcePhotos)) fs.cpSync(sourcePhotos, path.join(path.dirname(this.filePath), 'owner-photos'), { recursive: true, force: true });
@@ -766,25 +895,108 @@ class AssociationDatabase {
     this.db.pragma('foreign_keys = ON');
     this.db.pragma('journal_mode = WAL');
     this.db.pragma('busy_timeout = 5000');
+    this.initialize();
+  }
+
+  settingsValues() {
+    return Object.fromEntries(this.db.prepare('SELECT key, value FROM settings').all().map((row) => [row.key, row.value]));
+  }
+
+  getSettings() {
+    const values = this.settingsValues();
+    return {
+      name: values.association_name || 'Bus Malik Somiti',
+      address: values.association_address || '',
+      logo: values.association_logo || '',
+      backup_folder: values.backup_folder || '',
+      auto_backup: values.auto_backup === '1',
+      keep_copies: Number(values.keep_copies || 30)
+    };
+  }
+
+  saveSettings(user, data) {
+    if (user.role !== 'admin') throw new Error('Only an administrator can change association settings.');
+    const write = this.db.prepare('INSERT INTO settings(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value');
+    this.db.transaction(() => {
+      if (data.name !== undefined) write.run('association_name', String(data.name || '').trim());
+      if (data.address !== undefined) write.run('association_address', String(data.address || '').trim());
+      if (data.logo !== undefined) write.run('association_logo', String(data.logo || '').trim());
+      if (data.backup_folder !== undefined) write.run('backup_folder', String(data.backup_folder || '').trim());
+      if (data.auto_backup !== undefined) write.run('auto_backup', data.auto_backup ? '1' : '0');
+      if (data.keep_copies !== undefined) write.run('keep_copies', String(Math.min(365, Math.max(1, Number(data.keep_copies) || 30))));
+    })();
+    this.audit(user.id, 'update', 'settings', 'settings', null, { ...data, logo: undefined });
+    return this.getSettings();
+  }
+
+  logoFile() {
+    const configured = this.getSettings().logo;
+    if (configured && fs.existsSync(configured)) return configured;
+    return fs.existsSync(BUNDLED_LOGO) ? BUNDLED_LOGO : null;
+  }
+
+  writePdfHeader(doc, subtitle, compact) {
+    const settings = this.getSettings();
+    const left = doc.page.margins.left;
+    const width = doc.page.width - left - doc.page.margins.right;
+    const top = doc.y;
+    const logo = this.logoFile();
+    const textTop = logo ? top + 48 : top;
+    if (logo) {
+      try { doc.image(logo, left + (width - 44) / 2, top, { fit: [44, 44] }); } catch { /* a corrupt logo file must not stop the report */ }
+    }
+    doc.y = textTop;
+    doc.fontSize(compact ? 12 : 17).fillColor('#17263d').font(doc.family.head)
+      .text(String(settings.name || 'Bus Malik Somiti'), left, textTop, { width, align: 'center' });
+    if (settings.address) doc.fontSize(9).fillColor('#52637b').font(doc.family.body).text(String(settings.address), { width, align: 'center' });
+    doc.fontSize(compact ? 9 : 11).fillColor('#2468c9').font(doc.family.head).text(String(subtitle || ''), { width, align: 'center' });
+    doc.moveDown(compact ? 0.4 : 0.8);
+    doc.moveTo(left, doc.y).lineTo(left + width, doc.y).strokeColor('#c9d7ea').stroke();
+    doc.moveDown(0.6);
+    return doc.y;
+  }
+
+  columnWidths(columns, rows, total) {
+    if (!columns.length) return [];
+    const weights = columns.map((header, index) => {
+      const longest = Math.max(String(header).length, ...rows.map((row) => String(row[index] ?? '').length), 4);
+      return Math.min(26, Math.max(6, longest));
+    });
+    const sum = weights.reduce((a, b) => a + b, 0);
+    return weights.map((weight) => (weight / sum) * total);
   }
 
   async exportPdf(filePath, title, headers, rows) {
+    const columns = (headers || []).map(String);
+    const values = (rows || []).map((row) => (Array.isArray(row) ? row : Object.values(row)));
     await new Promise((resolve, reject) => {
-      const doc = new PDFDocument({ margin: 40, layout: 'landscape' });
+      const doc = createDoc({ size: 'A4', margin: 36, layout: 'landscape' });
       const stream = fs.createWriteStream(filePath);
       doc.pipe(stream);
-      doc.fontSize(18).text(String(title || 'Association Report'), { align: 'center' });
-      doc.moveDown().fontSize(9).text(new Date().toLocaleString());
-      doc.moveDown();
-      const columns = (headers || []).map((header) => String(header));
-      const values = (rows || []).map((row) => Array.isArray(row) ? row : Object.values(row));
-      doc.fontSize(8);
-      doc.text(columns.join('   |   '));
-      doc.moveDown(0.5).text('-'.repeat(140));
-      for (const row of values) {
-        if (doc.y > 520) doc.addPage();
-        doc.text(row.map((cell) => String(cell ?? '')).join('   |   '), { width: 740 });
-      }
+      const tableWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+      const widths = this.columnWidths(columns, values, tableWidth);
+      const rowHeight = 15;
+      const bottom = doc.page.height - doc.page.margins.bottom - 20;
+      const drawRow = (cells, top, style) => {
+        let x = doc.page.margins.left;
+        if (style === 'head') doc.rect(doc.page.margins.left, top, tableWidth, rowHeight).fill('#edf3fb');
+        doc.font(style === 'head' ? doc.family.head : doc.family.body).fontSize(8).fillColor('#17263d');
+        cells.forEach((cell, index) => {
+          doc.text(String(cell ?? ''), x + 3, top + 4, { width: Math.max(20, widths[index] - 6), ellipsis: true, lineBreak: false });
+          x += widths[index] || 0;
+        });
+      };
+      let y = this.writePdfHeader(doc, String(title || 'Association Report')) + 6;
+      drawRow(columns, y, 'head');
+      y += rowHeight;
+      values.forEach((row, index) => {
+        if (y > bottom) { doc.addPage(); y = this.writePdfHeader(doc, String(title || 'Association Report'), true) + 6; drawRow(columns, y, 'head'); y += rowHeight; }
+        if (index % 2 === 1) doc.rect(doc.page.margins.left, y, tableWidth, rowHeight).fill('#f7fafd');
+        drawRow(row, y, 'body');
+        y += rowHeight;
+      });
+      doc.font(doc.family.body).fontSize(8).fillColor('#7d8ba0');
+      doc.text(`Generated ${new Date().toLocaleString()} · ${values.length} rows`, doc.page.margins.left, Math.min(y + 8, bottom), { width: tableWidth });
       doc.end();
       stream.on('finish', resolve);
       stream.on('error', reject);
@@ -804,33 +1016,52 @@ class AssociationDatabase {
   }
 
   async receiptPath(receiptId) {
-    const receipt = this.db.prepare(`SELECT r.*,o.name AS owner_name,m.name AS member_name,b.registration_number,rte.name AS route_name
+    const receipt = this.db.prepare(`SELECT r.*,o.name AS owner_name,m.name AS member_name,b.registration_number,rte.name AS route_name,
+      u.full_name AS issued_by,t.receiver_name,t.reference_number,t.description,f.name AS fund_name
       FROM receipts r LEFT JOIN owners o ON o.id=r.owner_id LEFT JOIN members m ON m.id=r.member_id
-      LEFT JOIN buses b ON b.id=r.bus_id LEFT JOIN routes rte ON rte.id=r.route_id WHERE r.id=?`).get(receiptId);
+      LEFT JOIN buses b ON b.id=r.bus_id LEFT JOIN routes rte ON rte.id=r.route_id
+      LEFT JOIN users u ON u.id=r.created_by LEFT JOIN fund_transactions t ON t.id=r.fund_transaction_id
+      LEFT JOIN funds f ON f.id=t.fund_id WHERE r.id=?`).get(receiptId);
     if (!receipt) throw new Error('Receipt not found.');
     const outDir = path.join(path.dirname(this.filePath), 'receipts');
     fs.mkdirSync(outDir, { recursive: true });
     const output = path.join(outDir, `${receipt.receipt_number}.pdf`);
     await new Promise((resolve, reject) => {
-      const doc = new PDFDocument({ size: 'A5', margin: 36 });
+      const doc = createDoc({ size: 'A5', margin: 34 });
       const stream = fs.createWriteStream(output);
       doc.pipe(stream);
-      doc.fontSize(18).text('Bus Malik Somiti', { align: 'center' });
-      doc.fontSize(10).text('Payment Receipt', { align: 'center' });
-      doc.moveDown();
-      doc.fontSize(10).text(`Receipt No: ${receipt.receipt_number}`);
-      doc.text(`Date: ${receipt.date}`);
-      doc.moveDown();
-      doc.text(`Received from: ${receipt.owner_name || receipt.member_name || 'Association income'}`);
-      doc.text(`Bus: ${receipt.registration_number || '-'}`);
-      doc.text(`Route: ${receipt.route_name || '-'}`);
-      doc.text(`Category: ${receipt.category}`);
-      doc.moveDown();
-      doc.fontSize(14).text(`Amount: BDT ${(receipt.amount_paisa / 100).toFixed(2)}`);
+      const left = doc.page.margins.left;
+      const contentWidth = doc.page.width - left - doc.page.margins.right;
+      doc.y = this.writePdfHeader(doc, 'Payment Receipt · আদায়ের রসিদ');
+      const meta = (label, value) => {
+        const top = doc.y;
+        doc.font(doc.family.head).fontSize(9).fillColor('#52637b').text(String(label), left, top, { width: 128 });
+        doc.font(doc.family.body).fontSize(10).fillColor('#17263d').text(String(value ?? '—'), left + 132, top, { width: contentWidth - 132 });
+        doc.moveDown(0.2);
+      };
+      meta('Receipt No · রসিদ নম্বর', receipt.receipt_number);
+      meta('Date · তারিখ', receipt.date);
+      meta('Received from · প্রদাতা', receipt.owner_name || receipt.member_name || 'Association income · সমিতির আয়');
+      if (receipt.registration_number) meta('Bus · বাস', receipt.registration_number);
+      if (receipt.route_name) meta('Route · রুট', receipt.route_name);
+      meta('Category · খাত', receipt.category);
+      if (receipt.fund_name) meta('Fund · তহবিল', receipt.fund_name);
+      if (receipt.reference_number) meta('Reference · রেফারেন্স', receipt.reference_number);
+      if (receipt.description) meta('Description · বিবরণ', receipt.description);
+      doc.moveDown(0.5);
+      const boxTop = doc.y;
+      doc.roundedRect(left, boxTop, contentWidth, 46, 6).fillAndStroke('#f2f7fd', '#c9d7ea');
+      doc.font(doc.family.head).fontSize(9).fillColor('#52637b').text('Amount · পরিমাণ', left + 12, boxTop + 8, { width: contentWidth - 24 });
+      doc.font(doc.family.strong).fontSize(17).fillColor('#16355c').text(formatBdt(receipt.amount_paisa), left + 12, boxTop + 21, { width: contentWidth - 24 });
+      doc.y = boxTop + 54;
+      doc.font(doc.family.body).fontSize(9).fillColor('#52637b')
+        .text(`In words · কথায়: ${amountInWords(receipt.amount_paisa)}`, left, doc.y, { width: contentWidth });
       doc.moveDown(2);
-      doc.text('Received by: ____________________');
-      doc.moveDown(2);
-      doc.text('Authorized signature: ____________________');
+      const footerY = Math.min(doc.y, doc.page.height - doc.page.margins.bottom - 46);
+      doc.font(doc.family.body).fontSize(9).fillColor('#52637b');
+      doc.text(`Received by · গ্রহীতা: ${receipt.receiver_name || receipt.issued_by || '—'}`, left, footerY, { width: contentWidth / 2 });
+      doc.text('Authorized signature · অনুমোদিত স্বাক্ষর', left + contentWidth / 2, footerY, { width: contentWidth / 2 });
+      doc.moveTo(left + contentWidth / 2, footerY + 26).lineTo(left + contentWidth - 10, footerY + 26).strokeColor('#9fb0c6').stroke();
       doc.end();
       stream.on('finish', resolve);
       stream.on('error', reject);

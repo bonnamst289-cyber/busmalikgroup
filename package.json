@@ -8,7 +8,7 @@
     "build:icon": "node scripts/build-icon.cjs",
     "build:native:electron": "node scripts/rebuild-native.cjs",
     "dist:win": "npm run build:icon && npm run build:native:electron && electron-builder --win",
-    "test": "node --test"
+    "test": "node scripts/test.cjs"
   },
   "keywords": [
     "electron",
@@ -34,7 +34,7 @@
     "productName": "Bus Malik Somiti",
     "npmRebuild": false,
     "directories": {
-      "output": "release"
+      "output": "dist"
     },
     "files": [
       "src/**/*",
