@@ -44,6 +44,14 @@ jobs:
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
 
+      # The tests run inside Electron's Node runtime because better-sqlite3 is
+      # compiled for Electron's ABI, so the native rebuild has to precede npm test.
+      - name: Build the application icon
+        run: npm run build:icon
+
+      - name: Build better-sqlite3 for Electron
+        run: npm run build:native:electron
+
       - name: Run the test suite
         run: npm test
 
@@ -51,12 +59,6 @@ jobs:
         if: env.IS_RELEASE == 'true'
         id: release
         run: node scripts/prepare-release.cjs ${{ github.event_name == 'push' && github.ref_name || '' }}
-
-      - name: Build the application icon
-        run: npm run build:icon
-
-      - name: Build better-sqlite3 for Electron
-        run: npm run build:native:electron
 
       - name: Build the NSIS installer and latest.yml
         run: npx electron-builder --win nsis --x64 --publish never
