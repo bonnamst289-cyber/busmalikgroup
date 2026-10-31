@@ -7,7 +7,7 @@
     "start": "electron .",
     "build:icon": "node scripts/build-icon.cjs",
     "build:native:electron": "node scripts/rebuild-native.cjs",
-    "dist:win": "npm run build:icon && npm run build:native:electron && electron-builder --win",
+    "dist:win": "npm run build:icon && npm run build:native:electron && electron-builder --win nsis --x64",
     "test": "node scripts/test.cjs"
   },
   "keywords": [
@@ -17,13 +17,20 @@
   ],
   "author": "",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bonnamst289-cyber/busmalikgroup.git"
+  },
   "engines": {
     "node": "22.x"
   },
   "dependencies": {
     "better-sqlite3": "^11.8.1",
+    "electron-updater": "^6.8.11",
     "exceljs": "^4.4.0",
-    "pdfkit": "^0.16.0"
+    "jszip": "^3.10.2",
+    "pdfkit": "^0.16.0",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "electron": "^35.1.5",
@@ -33,6 +40,13 @@
     "appId": "bd.busmaliksomiti.desktop",
     "productName": "Bus Malik Somiti",
     "npmRebuild": false,
+    "publish": {
+      "provider": "github",
+      "owner": "bonnamst289-cyber",
+      "repo": "busmalikgroup",
+      "releaseType": "release",
+      "vPrefixedTagName": true
+    },
     "directories": {
       "output": "dist"
     },
@@ -48,21 +62,19 @@
           "arch": [
             "x64"
           ]
-        },
-        {
-          "target": "portable",
-          "arch": [
-            "x64"
-          ]
         }
       ],
       "icon": "assets/app.ico"
     },
     "nsis": {
       "oneClick": false,
+      "perMachine": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
+      "createStartMenuShortcut": true,
+      "shortcutName": "Bus Malik Somiti",
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "BusMalikSomiti-Setup-${version}-${arch}.${ext}"
     },
     "asar": true
   },

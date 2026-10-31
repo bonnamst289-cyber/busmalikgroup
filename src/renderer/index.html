@@ -16,6 +16,7 @@
       <form id="auth-form"></form>
       <div id="auth-error" class="error-text"></div>
     </div>
+    <footer class="auth-footer">Powered by <strong>AVA IT SOLUTION</strong></footer>
   </section>
   <div id="app" class="app-shell" hidden>
     <aside class="sidebar">
@@ -24,13 +25,16 @@
       <div class="sidebar-bottom"><span id="user-label"></span><button id="logout" class="nav-link">↪ <span data-i18n="logout">Sign out</span></button></div>
     </aside>
     <main class="main">
+      <div id="update-banner" class="update-banner" hidden></div>
       <header class="topbar"><div><div class="eyebrow" data-i18n="workspace">ASSOCIATION WORKSPACE</div><h1 id="page-title">Dashboard</h1></div>
         <div class="top-actions"><span class="offline-pill"><i></i><span data-i18n="offline">Offline ready</span></span><button id="language-toggle" class="button button-outline">বাংলা</button></div>
       </header>
       <section id="content" class="content"></section>
     </main>
   </div>
+  <div id="update-gate" class="update-gate" hidden></div>
   <div id="modal-root"></div>
+  <div id="print-root"></div>
   <div id="toast" class="toast"></div>
   <script src="app.js"></script>
 </body>

@@ -5,3 +5,12 @@ tmp-*
 *.log
 .DS_Store
 Thumbs.db
+
+# Signing keys from the retired custom updater — never commit these
+updater-keys/
+# Installer output folders (dist/ above already covers the current build)
+dist-*/
+# Temporary verification folders
+.tmp-*
+# Windows shortcuts dropped into the project folder
+*.lnk

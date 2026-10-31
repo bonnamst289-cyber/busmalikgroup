@@ -1,0 +1,7 @@
+# Used only by `npm start` with SOMITI_UPDATES_FORCE=1. The installed
+# application reads the same settings from resources/app-update.yml, which
+# electron-builder writes from the publish block in package.json.
+# No token belongs in this file: the repository is public.
+provider: github
+owner: bonnamst289-cyber
+repo: busmalikgroup

@@ -12,7 +12,7 @@
 
 সব অর্থ **পয়সায় (integer)** সংরক্ষিত হয় — ভগ্নাংশের রাউন্ডিং ত্রুটি এড়াতে। স্ক্রিনে ব্যবহারকারী টাকা (BDT) লেখেন; `*_bdt` ইনপুট `*_paisa` কলামে ×১০০ করে জমা হয়। তারিখ `TEXT` ফরম্যাট `YYYY-MM-DD`.
 
-## টেবিল তালিকা (১৫টি)
+## টেবিল তালিকা (১৯টি)
 
 | টেবিল | কাজ |
 |---|---|
@@ -21,11 +21,15 @@
 | `buses` | বাস |
 | `routes` | রুট ও প্রতি ট্রিপ চার্জ |
 | `members` | সমিতির সদস্য |
-| `funds` | তহবিল (General, Welfare, …) |
+| `funds` | রুটভিত্তিক তহবিল (নাম, রুট, প্রতি ট্রিপের পরিমাণ) |
 | `income_categories` / `expense_categories` | আয়/ব্যয়ের খাত |
 | `fund_transactions` | আয় ও ব্যয়ের লেজার |
 | `fund_transfers` | দুই তহবিলের মধ্যে স্থানান্তর |
-| `fund_distributions` | ক্যাশবুক থেকে তহবিলে বণ্টন |
+| `fund_distributions` | পুরোনো বণ্টন রেকর্ড (শুধু সংরক্ষণের জন্য) |
+| `route_cash_ins` | রুটভিত্তিক Cash In (প্রতি ট্রিপ × ট্রিপ সংখ্যা) |
+| `cash_outs` | রুট ও তহবিলভিত্তিক Cash Out (প্রতি ট্রিপ × ট্রিপ সংখ্যা) |
+| `banks` | ব্যাংক হিসাব (নাম, শাখা, হিসাব নম্বর, ধরন, Opening Balance) |
+| `bank_deposits` | তহবিল থেকে ব্যাংকে জমা (ট্রান্সফার, আয় নয়) |
 | `receipts` | আয়ের রসিদ |
 | `settings` | সমিতির নাম/ঠিকানা/লোগো, ব্যাকআপ সেটিংস |
 | `audit_logs` | কে কী পরিবর্তন করেছে |
@@ -61,7 +65,7 @@
 
 ### funds
 
-`name` (UNIQUE), `opening_balance_paisa`, `is_active`। নিষ্ক্রিয় তহবিল আয়/ব্যয় ফর্মে ও ক্যাশবুকে দেখায় না, তবে পুরোনো লেনদেন ঠিক থাকে।
+`name` (UNIQUE), `route_id` → `routes.id` (তহবিল যে রুটের জন্য বরাদ্দ), `amount_paisa` (> ০, প্রতি ট্রিপে বরাদ্দ), `opening_balance_paisa` (পুরোনো রেকর্ডের জন্য সংরক্ষিত), `is_active`। একই রুটে একাধিক তহবিল থাকতে পারে। নতুন তহবিলের জন্য নাম, রুট ও প্রতি ট্রিপের পরিমাণ বাধ্যতামূলক। নিষ্ক্রিয় তহবিল ক্যাশআউট ফর্মে ও ক্যাশবুকে দেখায় না, তবে পুরোনো লেনদেন ঠিক থাকে।
 
 ### fund_transactions
 
@@ -85,9 +89,25 @@
 
 `from_fund_id`, `to_fund_id` (`CHECK(from <> to)`), `date`, `amount_paisa`, `description`। স্থানান্তর আয়/ব্যয়ের যোগফলে পড়ে না।
 
-### fund_distributions
+### fund_distributions (পুরোনো রেকর্ড)
 
-`fund_id`, `fund_name` (কপি হিসেবে রাখা), `date`, `amount_paisa`, `request_key` (UNIQUE)। একই `request_key` দিয়ে বারবার পাঠালে নতুন এন্ট্রি হয় না (idempotent)। মোট বণ্টন ক্যাশ-ইনের বেশি হতে পারে না, তাই আয় কমিয়ে দিলে অ্যাপ বাধা দেয়।
+`fund_id`, `fund_name` (কপি হিসেবে রাখা), `date`, `amount_paisa`, `request_key` (UNIQUE)। নতুন সংস্করণে এই টেবিলে আর কোনো এন্ট্রি যোগ হয় না। অ্যাপ খোলার সময় পুরোনো সারিগুলো `cash_outs`-এ অনুলিপি হয় (`legacy_distribution_id`, `request_key = 'legacy-distribution-<id>'`), কিন্তু মূল সারিগুলো মুছে ফেলা হয় না। একই ডাটাবেজ বারবার খুললেও অনুলিপি একবারই হয়।
+
+### route_cash_ins
+
+`route_id` → `routes.id` (DELETE SET NULL), `route_name` (কপি হিসেবে রাখা), `per_trip_paisa` (> ০), `total_trips` (> ০), `total_amount_paisa` (> ০), `date`, `request_key` (UNIQUE), `created_by`। মোট টাকা সার্ভারে `per_trip_paisa × total_trips` হিসেবে হিসাব হয়; ক্লায়েন্ট থেকে পাঠানো মোট গ্রহণ করা হয় না। একই `request_key` দিয়ে ডুপ্লিকেট সাবমিট আটকানো হয়। মোট Cash In = `route_cash_ins`-এর যোগফল + পুরোনো `fund_transactions` আয়।
+
+### cash_outs
+
+`route_id` → `routes.id` (DELETE SET NULL), `route_name` (কপি), `fund_id` → `funds.id` (DELETE RESTRICT), `fund_name` (কপি), `per_trip_paisa` (> ০), `total_trips` (> ০), `amount_paisa` (> ০), `date`, `request_key` (UNIQUE), `batch_key` (একই Cash Out-এ নির্বাচিত সব তহবিলের গ্রুপ), `legacy_distribution_id` (UNIQUE, পুরোনো বণ্টন থেকে এলে), `created_by`। অ্যাপ যাচাই করে তহবিলটি ওই রুটেই বরাদ্দ কি না এবং প্রতিটি সারির পরিমাণ `per_trip_paisa × total_trips`; Grand Total সব সারির যোগফল। মোট Cash Out কখনো মোট Cash In-এর বেশি হতে পারে না। একই `request_key` ও `batch_key` দিয়ে ডুপ্লিকেট সাবমিট আটকানো হয়। উপলব্ধ ক্যাশ = মোট Cash In − মোট Cash Out। Cash Out-এর টাকা সংশ্লিষ্ট তহবিলের ব্যালেন্সে যোগ হয় (ক্যাশবুক থেকে তহবিলে বরাদ্দ)।
+
+### banks
+
+`name`, `branch_name`, `account_holder`, `account_number` (UNIQUE), `account_type` (`Current`/`Savings`/`FDR`/`Other`), `routing_number` (ঐচ্ছিক), `opening_balance_paisa` (≥ ০)। ব্যাংকের বর্তমান ব্যালেন্স কোথাও জমা রাখা হয় না — প্রতিবার `opening_balance_paisa + SUM(bank_deposits.amount_paisa)` হিসাব হয়। যে ব্যাংকে জমা আছে সেটি DELETE RESTRICT-এ মুছতে বাধা দেয়।
+
+### bank_deposits
+
+`date`, `bank_id` → `banks.id` (DELETE RESTRICT), `fund_id` → `funds.id` (DELETE RESTRICT), `amount_paisa` (> ০), `transaction_id` (বাধ্যতামূলক), `note`, `created_by`, `created_at`, `updated_at`। `(bank_id, transaction_id)`-এ আংশিক UNIQUE ইনডেক্স — একই ব্যাংকে একই স্লিপ নম্বর দুইবার সংরক্ষিত হয় না। জমা আয় নয়: এটি `fund_transactions`, `route_cash_ins` বা Cash In/Cash Out মোটে যোগ হয় না। তহবিলের ব্যালেন্স থেকে `amount_paisa` বাদ যায় এবং ব্যাংকের ব্যালেন্সে যোগ হয়; তহবিলের উপলব্ধ ব্যালেন্সের বেশি জমা দিলে সার্ভার বাধা দেয়। তহবিল ডেবিট ও ব্যাংক ক্রেডিট একটি `IMMEDIATE` ডাটাবেস ট্রানজেকশনে হয়; সারি সম্পাদনা/মুছে ফেললে দুই ব্যালেন্সই নতুন করে হিসাব হয়। জমা সম্পাদনা ও মুছে ফেলা প্রশাসক-সীমাবদ্ধ এবং `audit_logs`-এ `bank_deposit` নামে থাকে।
 
 ### settings
 
@@ -95,20 +115,22 @@
 
 ### audit_logs ও login_history
 
-`audit_logs`: `user_id`, `action` (create/update/delete/post/transfer/distribution/auto-backup…), `entity`, `entity_id`, `before_json`, `after_json`, `created_at`।
+`audit_logs`: `user_id`, `action` (create/correct/delete/post/transfer/cash_out/auto-backup…), `entity`, `entity_id`, `before_json`, `after_json`, `created_at`।
 `login_history`: `user_id`, `username`, `success` (0/1), `created_at`।
 
-## ইনডেক্স (৯টি)
+## ইনডেক্স (১৭টি)
 
-`idx_buses_owner`, `idx_buses_route`, `idx_transactions_date`, `idx_transactions_fund`, `idx_transactions_party`, `idx_transactions_source`, `idx_receipts_date`, `idx_receipts_transaction`, `idx_fund_distributions_fund`।
+`idx_buses_owner`, `idx_buses_route`, `idx_transactions_date`, `idx_transactions_fund`, `idx_transactions_party`, `idx_transactions_source`, `idx_receipts_date`, `idx_receipts_transaction`, `idx_fund_distributions_fund`, `idx_route_cash_ins_date`, `idx_cash_outs_fund`, `idx_cash_outs_route`, `idx_cash_outs_batch`, `idx_bank_deposits_date`, `idx_bank_deposits_bank`, `idx_bank_deposits_fund`, `idx_bank_deposits_txn` (একই ব্যাংকে Transaction ID অনন্য রাখে)।
 
 ## ট্রিপ ও মাসিক চাঁদা মডিউল সরানো হয়েছে
 
-`trips` ও `monthly_dues` টেবিল, সেগুলোর ইনডেক্স, IPC, ফর্ম ও রিপোর্ট — সবই অ্যাপ থেকে সরানো হয়েছে। নতুন ডাটাবেজে এই টেবিল তৈরি হয় না। পুরোনো ফাইলে এই টেবিল থাকলে অ্যাপ সেগুলো **অপরিবর্তিত রেখে** চলে (কোনো ডাটা মুছে ফেলা হয় না)। আয়ের একমাত্র উৎস এখন Income & Expense ফর্মের এন্ট্রি। `Trip Collection` / `Monthly Member Fees` খাত দুটি নতুন এন্ট্রির জন্য তালিকা থেকে সরানো হয়।
+`trips` ও `monthly_dues` টেবিল, সেগুলোর ইনডেক্স, IPC, ফর্ম ও রিপোর্ট — সবই অ্যাপ থেকে সরানো হয়েছে। নতুন ডাটাবেজে এই টেবিল তৈরি হয় না। পুরোনো ফাইলে এই টেবিল থাকলে অ্যাপ সেগুলো **অপরিবর্তিত রেখে** চলে (কোনো ডাটা মুছে ফেলা হয় না)। আয়ের একমাত্র সক্রিয় উৎস এখন ক্যাশবুকের **Cash In** (রুট ও ট্রিপ সংখ্যা); আগের আয়ের রেকর্ড `fund_transactions`-এ অপরিবর্তিত থাকে এবং মোট Cash In-এ যোগ হয়। `Trip Collection` / `Monthly Member Fees` খাত দুটি নতুন এন্ট্রির জন্য তালিকা থেকে সরানো হয়।
+
+ক্যাশবুকের ব্যয়ের একমাত্র সক্রিয় পথ এখন **Cash Out** (রুট + তহবিল × ট্রিপ সংখ্যা)। পুরোনো **Fund Distribution** মডিউল ও তার API সরানো হয়েছে; পুরোনো `fund_distributions` সারিগুলো উপরের নিয়মে `cash_outs`-এ সংরক্ষিত হয়।
 
 ## নতুন সংস্করণ পুরোনো ফাইলের সাথে খোলা
 
-অ্যাপ খোলার সময় `migrations` তালিকা অনুযায়ী যেকোনো অনুপস্থিত কলাম `ALTER TABLE … ADD COLUMN` দিয়ে যোগ হয় (সব কিছুর ডিফল্ট মান আছে)। তাই পুরোনো `%APPDATA%\bus-malik-somiti\association.sqlite` ফাইল সরাসরি নতুন সংস্করণে চলে।
+অ্যাপ খোলার সময় `migrations` তালিকা অনুযায়ী যেকোনো অনুপস্থিত কলাম `ALTER TABLE … ADD COLUMN` দিয়ে যোগ হয় (সব কিছুর ডিফল্ট মান আছে)। `funds.route_id` ও `funds.amount_paisa` নতুন কলাম হিসেবে পুরোনো তহবিলে যোগ হয় (ডিফল্ট `NULL` ও `0`)। `cash_outs` টেবিল না থাকলে তৈরি হয় এবং পুরোনো `fund_distributions` সারিগুলো একবারই সেখানে অনুলিপি হয়। `banks` ও `bank_deposits` টেবিল এবং তাদের ইনডেক্সও পুরোনো ফাইলে স্বয়ংক্রিয়ভাবে তৈরি হয়; পুরোনো কোনো ব্যালেন্স বা মোট বদলায় না (শুরুতে কোনো ব্যাংক বা জমা থাকে না)। তাই পুরোনো `%APPDATA%\bus-malik-somiti\association.sqlite` ফাইল সরাসরি নতুন সংস্করণে চলে; বিদ্যমান রুট, তহবিল, লেনদেন ও বণ্টনের রেকর্ড অক্ষত থাকে।
 
 ## ব্যাকআপ ও পুনরুদ্ধার ডাটা
 
