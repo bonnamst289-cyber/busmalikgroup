@@ -1,6 +1,6 @@
 {
   "name": "bus-malik-somiti",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Offline bus owners association management software",
   "main": "src/main.cjs",
   "scripts": {
