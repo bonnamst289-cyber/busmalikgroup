@@ -98,20 +98,20 @@ updaterCacheDirName: bus-malik-somiti-updater
 
 আউটপুট: `dist/release-notes.md` + GitHub Actions output (`tag`, `version`, `notes_file`)।
 
-### ৩.ক প্রথম রিলিজ (v1.0.0) প্রকাশ — এই মেশিনে হাত দিয়ে চালানোর ধাপ
+### ৩.ক প্রকাশ — এটিই এখন চালানো হয়েছে (v1.0.0 ও v1.0.1)
 
-GitHub-এ push করার credential এই মেশিনে নেই, তাই এই চারটি লাইন yourself Git Bash-এ চালাতে হবে (repo-র ফোল্ডার থেকে):
+এই মেশিনে GitHub CLI (`gh` 2.103.3) ইনস্টল করা হয়েছে এবং `gh auth login` (web-browser device flow, অ্যাকাউন্ট `bonnamst289-cyber`, scopes `repo`) দিয়ে push অধিকার নেওয়া হয়েছে। token Windows-এর নিজের credential store-এ (`keyring`) থাকে — repo, installer বা EXE-তে যায় না। দুটি release-ই এই ধাপে প্রকাশিত:
 
 ```bash
 git remote add origin https://github.com/bonnamst289-cyber/busmalikgroup.git
-git add -A && git commit -m "Switch auto-update to electron-updater + GitHub Releases"
-git push -u origin main
-git tag v1.0.0 && git push origin v1.0.0
+git add -A && git commit -m "…"          # version + CHANGELOG একসাথে
+git push -u origin main                  # আগে build-only run, যাতে ভুল ধরা পড়ে
+git tag v1.0.1 && git push origin v1.0.1 # এটিই GitHub Release প্রকাশ করে
 ```
 
-শেষ লাইনটির পর GitHub → repo → **Actions** ট্যাবে `Windows release` চলতে দেখাবে; সবুজ হলে **Releases**-এ `v1.0.0` with `latest.yml`, `BusMalikSomiti-Setup-1.0.0-x64.exe` ও blockmap চলে আসবে। এরপর ১.০.১ প্রকাশ = উপরের চার ধাপ (version বাড়ান → CHANGELOG section → prepare-release → tag push)।
+Tag push-এর পর Actions → `Windows build and release` সবুজ হলে Release-এ `latest.yml`, `BusMalikSomiti-Setup-<version>-x64.exe` ও blockmap চলে আসে। পরের release-ও হুবহু এই চার লাইন: version বাড়ান → `CHANGELOG.md`-এ নতুন section → `node scripts/prepare-release.cjs v1.0.2` → commit → tag push।
 
-repo খালি থাকলে (no commits) প্রথম push-এর পর Actions-এর workflow ফাইলটিও যাবে; `gh` CLI না থাকলে browser-এর Releases/Actions পাতা দিয়েই যাচাই করা যায়।
+repo-তে commit না থাকলে প্রথম push-এর পরেই workflow ফাইলটি Actions-এ দেখা যায়; browser-এর Releases/Actions পাতা দিয়েও যাচাই করা যায়।
 
 ---
 
@@ -244,7 +244,35 @@ updaterCacheDirName: bus-malik-somiti-updater
 
 এতে কোনো token/secret নেই (`token|ghp_|secret` গুণে ০টি)। তাই "Update URL এই repository থেকেই আসবে" কথাটি বিল্ড করা ফাইল পড়ে প্রমাণিত।
 
-**যে অংশটি এখনো চালু হয়নি:** `git push` ও GitHub Release প্রকাশ — এই মেশিনে GitHub-এর কোনো credential নেই, আর `bonnamst289-cyber/busmalikgroup` repo-তে এখনো কোনো commit/tag/release নেই। কাজটি সম্পূর্ণ হতে হিসাব অনুযায়ী ধাপ ৩ নম্বর বিভাগের `node scripts/prepare-release.cjs v1.0.0` পাস করার পর tag push করতে হবে; Release-এ `latest.yml` + Setup.exe + blockmap দেখা গেলে এবং ইনস্টল করা 1.0.0 থেকে 1.0.1-এর ব্যানার আসলে তখনই GitHub-পক্ষ "চলছে" বলা যাবে।
+### ৯.ক আসল GitHub Release-এর বিরুদ্ধে end-to-end টেস্ট (২০২৬-১০-৩১, একই মেশিনে)
+
+Release পক্ষ এখন চলছে — প্রকাশিত দুটি release-ই Actions দিয়ে তৈরি:
+
+| Release | কী প্রকাশিত হয়েছে |
+|---|---|
+| `v1.0.0` | run [#41219539479](https://github.com/bonnamst289-cyber/busmalikgroup/actions/runs/41219539479) — Setup.exe **103,130,746** bytes, blockmap 108,497, `latest.yml` 365 bytes, body = CHANGELOG-এর বাংলা নোট |
+| `v1.0.1` | run [#41220557443](https://github.com/bonnamst289-cyber/busmalikgroup/actions/runs/41220557443) সব ১২ ধাপ ✓ ২m18s — Setup.exe **103,130,773** bytes, blockmap 108,777, `latest.yml` 365 bytes |
+
+প্রথম `main` push-এর run (#41218842223) **ব্যর্থ** হয়েছিল: `npm test` চলত better-sqlite3-এর Electron rebuild-এর আগে → ৭৩টির মধ্যে ৪৯টি `ERR_DLOPEN_FAILED` (`NODE_MODULE_VERSION 127 vs 133`)। step ক্রম সাজানোর পর (commit `05f21cd`) প্রতিটি run-এ ৭৩/৭৩ পাস।
+
+**ইনস্টল করা অ্যাপ → আসল GitHub feed:** আলাদা product `Bus Malik Somiti GitHub Test` (`bd.busmaliksomiti.ghtest`, userData `bus-malik-somiti-ghtest`, cache `bus-malik-somiti-ghtest-updater`), ভেতরের `app-update.yml` = `provider: github, owner: bonnamst289-cyber, repo: busmalikgroup` — কোনো token নেই। Settings → Software Update → 「আপডেট চেক করুন」-এ ক্লিক:
+
+| পর্যায় | মাপা সময় / ফলাফল |
+|---|---|
+| Feed lookup | 17:14:05.029 `Checking for update` → 17:14:05.033 `Found version 1.0.1` (আগেরবার 2,331 ms; token/secret লাগেনি, anonymous) |
+| Download | 103,130,773 bytes (98.4 MiB) ৪৬ সেকেন্ডে (16:52:23 → 16:53:09), progress 0→100% |
+| Integrity | অ্যাপ-নামানো ফাইলের sha256 `21f7f1ce53b85b61a1b76aac2543a7e088524fcc5ae826e0a045820ed00ad6e8` = GitHub asset-এর digest-এর হুবহু মিল; `update-info.json`-এর sha512 = ফাইলের computed sha512 |
+| Cache reuse | দ্বিতীয়বার চেক → 17:14:05.372 `Update has already been downloaded` (নতুন করে ১০৩ MB নামেনি), snapshot `ready` ৪,০৭৭ ms-এর মধ্যে |
+| Banner | `Update downloaded and ready to install` + রিলিজ নোট (GitHub Release-এর body থেকে বাংলা ৩ লাইন) + বোতাম `install: Install Update and Restart`, `later: Remind me later` |
+| Install (১মবার) | 16:53:13 spawn → `spawn EPERM` 16:55:14; installer চলেনি, কিছুই ইনস্টল হয়নি (সেই মুহূর্তে production folder-ই ছিল না) — পরে আবার চাপলেই চলছে, দেখুন নিচে |
+| Install (২য়বার) | 17:15:12 `installing update 1.0.0 -> 1.0.1` → 17:15:15 app quit → NSIS নীরবে ইনস্টল → production `Bus Malik Somiti` 1.0.1 চালু হলো |
+| ইনস্টল পরবর্তী প্রমাণ | HKCU এন্ট্রি **Bus Malik Somiti 1.0.1**; `resources/app.asar`-এর `package.json` version = **1.0.1** |
+| হিসাব অক্ষুণ্ণ | আপডেটের পরও `%APPDATA%\bus-malik-somiti\association.sqlite` = **299,008 bytes, mtime 16:09:35Z (আপডেটের আগে যেটুকু ছিল ঠিক তা-ই)**, `integrity_check = ok`, `user_version = 1`, গণনা: owners 12, buses 10, funds 5, routes 1, users 1, audit_logs 78, login_history 34 |
+| আপডেট লুপ নেই | ইনস্টল করা 1.0.1 নিজে থেকেই চেক করেছে: 17:17:13 → `Update for version 1.0.1 is not available (latest version: 1.0.1, downgrade is disallowed)`, `state.json`-এ `last_error: null` |
+
+Migration-আগের backup-এর ধাপ (requirement ১২) ৯ নম্বর বিভাগের লোকাল-ফিড টেস্টেই দেখানো — এই live টেস্টে DB-তে ইতিমধ্যে `user_version = 1` ছিল, তাই নতুন মাইগ্রেশন চলেনি ও নতুন copy লাগেনি।
+
+টেস্ট product, তার userData, ১০৩ MB cache ও `dist-ghtest\` পরে মুছে ফেলা হয়েছে; আসল সমিতির ডাটাবেজ স্পর্শ করা হয়নি (যাচাইও temp-এর copy-তে, ইন-প্লেস নয়)।
 
 ---
 
@@ -259,6 +287,7 @@ updaterCacheDirName: bus-malik-somiti-updater
 | SmartScreen "unknown publisher" | ইনস্টলার Authenticode-স্বাক্ষরিত নয় (কেনা certificate নেই)। বিকল্প: code-signing certificate কিনে electron-builder-এর `win.certificateFile` যোগ করা। স্বাক্ষর না থাকলেও installer ভেতরের SHA-512 electron-updater যাচাই করে। |
 | Update-এর পর পুরোনো ভার্সনই দেখায় | ইনস্টলার চালু হয়নি — `quitAndInstall`-এর আগে সব উইন্ডো বন্ধ করতে হবে; না হলে 「পরে」 চাপুন, অ্যাপ বন্ধের সময় ইনস্টল হবে। |
 | ১.০.০-এর আগের (Supabase-আপডেটারযুক্ত) ইনস্টল | ওই বিল্ডে এই আপডেট কোড নেই — **একবার** নতুন ইনস্টলার দিয়ে হাতে আপগ্রেড করুন; userData মুছবে না। এরপর স্বয়ংক্রিয়। |
+| 「ইনস্টল করে রিস্টার্ট করুন」-এ কিছু হয় না / log-এ `spawn EPERM` | installer spawn ব্লক হয়েছে (Antivirus/SmartScreen/প্রিভিলেজ)। অ্যাপ কিছুই হারায় না: ডাউনলোড cache-এ থেকে যায়, 「আপডেট চেক করুন」 → আবার 「ইনস্টল করে রিস্টার্ট করুন」 চাপুন; বারবার ব্যর্থ হলে Release থেকে Setup.exe নামিয়ে হাতে চালান (ডাটা অক্ষুণ্ণ থাকবে)। প্রকৃত টেস্টে প্রথম tap EPERM-এ থেমেছিল, দ্বিতীয় tap-এ 1.0.1 ইনস্টল হয়ে গেছে। |
 
 ---
 
@@ -268,4 +297,5 @@ updaterCacheDirName: bus-malik-somiti-updater
 - GitHub anonymous API rate limit আছে; ৬ ঘণ্টার দৈব চেক তা টেকে, কিন্তু অত্যধিক ইনস্টলেশন একই IP থেকে চেক করলে offline নোট দেখাতে পারে (অ্যাপের ক্ষতি নেই)।
 - Unsigned build → SmartScreen সতর্কতা (সেকেন্ড ধাপে certificate লাগালে সমাধান)।
 - Mandatory/blocking update নেই — ইচ্ছাকৃত নকশা: অফলাইনেও হিসাব চলতে হবে।
+- Installer spawn একবার আটকালে (EPERM/AV) electron-updater পুরো ডাউনলোড cache রেখে দেয় — দ্বিতীয়বার চাপলে ০.৪ সেকেন্ডেই আবার ইনস্টলে যায়; কখনোই আধা-ইনস্টল অবস্থা তৈরি হয় না (ইনস্টল NSIS-এর নিজের transaction)।
 - Release শুধু GitHub-এ; repo private করলে অ্যাপের anonymous চেক ব্যর্থ হবে (তখন token লাগবে, যা এই নকশায় রাখা যাবে না)।
