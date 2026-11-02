@@ -12,6 +12,17 @@ contextBridge.exposeInMainWorld('somiti', {
     changePassword: invoke('auth:change-password')
   },
   users: { list: invoke('users:list'), save: invoke('users:save') },
+  subscription: {
+    status: invoke('subscription:status'),
+    sync: invoke('subscription:sync'),
+    buyInfo: invoke('subscription:buy-info'),
+    history: invoke('subscription:history'),
+    submitPayment: invoke('subscription:submit-payment'),
+    config: invoke('subscription:config'),
+    saveConfig: invoke('subscription:save-config'),
+    testConfig: invoke('subscription:test-config'),
+    copy: invoke('subscription:copy')
+  },
   dashboard: { get: invoke('dashboard:get') },
   records: { list: invoke('records:list'), save: invoke('records:save'), delete: invoke('records:delete') },
   owners: { account: invoke('owners:account') },
@@ -70,6 +81,11 @@ contextBridge.exposeInMainWorld('somiti', {
     install: invoke('updates:install'),
     later: invoke('updates:later'),
     skip: invoke('updates:skip'),
+    setAuto: invoke('updates:auto'),
+    checkGate: invoke('updates:gate-check'),
+    apply: invoke('updates:apply'),
+    retry: invoke('updates:retry'),
+    verify: invoke('updates:verify'),
     onEvent: (callback) => {
       const listener = (_event, state) => callback(state);
       ipcRenderer.on('updates:event', listener);

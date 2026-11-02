@@ -1,6 +1,6 @@
 {
   "name": "bus-malik-somiti",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "Offline bus owners association management software",
   "main": "src/main.cjs",
   "scripts": {
@@ -8,7 +8,8 @@
     "build:icon": "node scripts/build-icon.cjs",
     "build:native:electron": "node scripts/rebuild-native.cjs",
     "dist:win": "npm run build:icon && npm run build:native:electron && electron-builder --win nsis --x64",
-    "test": "node scripts/test.cjs"
+    "test": "node scripts/test.cjs",
+    "release:manifest": "node scripts/update-manifest.cjs"
   },
   "keywords": [
     "electron",
@@ -38,7 +39,7 @@
   },
   "build": {
     "appId": "bd.busmaliksomiti.desktop",
-    "productName": "Bus Malik Somiti",
+    "productName": "Bus Malik Group",
     "npmRebuild": false,
     "publish": {
       "provider": "github",
@@ -53,6 +54,7 @@
     "files": [
       "src/**/*",
       "assets/**/*",
+      "!assets/logo-source.png",
       "package.json"
     ],
     "win": {
@@ -72,9 +74,9 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Bus Malik Somiti",
+      "shortcutName": "Bus Malik Group",
       "deleteAppDataOnUninstall": false,
-      "artifactName": "BusMalikSomiti-Setup-${version}-${arch}.${ext}"
+      "artifactName": "BusMalikGroup-Setup-${version}-${arch}.${ext}"
     },
     "asar": true
   },

@@ -4,23 +4,153 @@
   <meta charset="UTF-8">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' file: data:; style-src 'self'; script-src 'self';">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Bus Malik Somiti</title>
+  <title>Bus Malik Group</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <section id="auth" class="auth-shell" hidden>
-    <div class="auth-card">
-      <div class="brand-mark">BS</div>
-      <h1 id="auth-title">Bus Malik Somiti</h1>
-      <p id="auth-description">Sign in to manage association operations.</p>
-      <form id="auth-form"></form>
-      <div id="auth-error" class="error-text"></div>
+    <div class="auth-panel">
+      <aside class="auth-visual">
+        <div class="auth-visual-inner">
+          <div class="auth-logo-row">
+            <img class="auth-logo" src="../../assets/logo.png" alt="Bus Malik Group logo">
+            <div><strong>Bus Malik Group</strong><span>Association Management System</span></div>
+          </div>
+          <h2>Run your association with confidence.</h2>
+          <p>Buses, owners, cashbook, funds, banking and reports — all in one secure offline-first workspace.</p>
+          <ul class="auth-points">
+            <li>Works fully offline on this computer</li>
+            <li>Role-based access for owners, cashiers and staff</li>
+            <li>One yearly package for the whole business</li>
+          </ul>
+          <div id="auth-package-card" class="auth-package-card">
+            <div class="auth-package-head"><span>Yearly Business Package</span><span class="auth-package-badge">BDT 8,000</span></div>
+            <div class="auth-package-body" id="auth-package-body">Checking package status…</div>
+          </div>
+          <p class="auth-visual-foot">Powered by <strong>AVA IT SOLUTION</strong></p>
+        </div>
+      </aside>
+
+      <div class="auth-card">
+        <div class="auth-brand">
+          <img class="auth-logo auth-logo-small" src="../../assets/logo.png" alt="">
+          <div>
+            <h1 id="auth-title">Bus Malik Group</h1>
+            <p id="auth-description">Sign in to manage association operations.</p>
+          </div>
+        </div>
+
+        <form id="auth-form" autocomplete="on" novalidate>
+          <div class="auth-field" id="auth-name-field" hidden>
+            <label for="auth-fullname">Full Name</label>
+            <div class="auth-input-wrap">
+              <span class="auth-input-icon">☺</span>
+              <input id="auth-fullname" name="full_name" type="text" autocomplete="name" placeholder="Your full name">
+            </div>
+          </div>
+          <div class="auth-field">
+            <label for="auth-username">Username / Email</label>
+            <div class="auth-input-wrap">
+              <span class="auth-input-icon">@</span>
+              <input id="auth-username" name="username" type="text" required autocomplete="username" placeholder="Enter username or email" spellcheck="false">
+            </div>
+          </div>
+          <div class="auth-field">
+            <label for="auth-password">Password</label>
+            <div class="auth-input-wrap">
+              <span class="auth-input-icon">⌘</span>
+              <input id="auth-password" name="password" type="password" required autocomplete="current-password" placeholder="Enter your password">
+              <button type="button" class="auth-eye" id="auth-toggle-password" aria-label="Show password">Show</button>
+            </div>
+          </div>
+          <div class="auth-row">
+            <label class="auth-check"><input type="checkbox" id="auth-remember"> Remember me</label>
+            <button type="button" class="auth-link" id="auth-forgot">Forgot password?</button>
+          </div>
+          <button class="button button-primary auth-submit" type="submit" id="auth-submit">Sign in</button>
+        </form>
+
+        <div id="auth-error" class="auth-error" role="alert"></div>
+        <div id="auth-notice" class="auth-notice" hidden></div>
+
+        <div class="auth-buy">
+          <div><strong>Yearly Business Package</strong><span>৳8,000 · 365 days</span></div>
+          <button type="button" class="button button-outline" id="auth-buy-button">Buy Package</button>
+        </div>
+        <p class="auth-support">Need help? Contact AVA IT SOLUTION.</p>
+      </div>
     </div>
     <footer class="auth-footer">Powered by <strong>AVA IT SOLUTION</strong></footer>
   </section>
+
+  <section id="buy-package" class="buy-shell" hidden>
+    <header class="buy-header">
+      <button type="button" class="button button-outline" id="buy-back">← Back</button>
+      <div class="buy-header-title"><strong>Yearly Business Package</strong><span>Manual bKash / Nagad payment</span></div>
+      <button type="button" class="button button-outline" id="buy-sync">Refresh status</button>
+    </header>
+    <main class="buy-main">
+      <div class="buy-hero" id="buy-summary"></div>
+      <div class="buy-grid">
+        <section class="buy-card">
+          <h2>1. Choose payment method</h2>
+          <div id="buy-methods" class="buy-methods"></div>
+          <div id="buy-account" class="buy-account"></div>
+          <div class="buy-steps">
+            <p><strong>2.</strong> Send exactly ৳8,000 to the selected <b>Personal</b> number using <b>Send Money</b>. Do not use Merchant Payment or Checkout.</p>
+            <p><strong>3.</strong> Copy the Transaction ID from the payment confirmation and submit the form. The status will show <b>Pending Approval</b>.</p>
+            <p class="buy-warning">Your package activates only after the administrator verifies the payment. Submitting a Transaction ID does not activate the package by itself. After approval it stays active for 365 days.</p>
+          </div>
+
+          <form id="buy-form" class="form-grid" novalidate>
+            <div class="field">
+              <label for="buy-business-name">Business Name *</label>
+              <input id="buy-business-name" name="business_name" type="text" required maxlength="200" placeholder="Association / business name">
+            </div>
+            <div class="field">
+              <label for="buy-contact">Contact Number *</label>
+              <input id="buy-contact" name="contact_number" type="tel" required maxlength="30" placeholder="01XXXXXXXXX">
+            </div>
+            <div class="field">
+              <label for="buy-method-select">Payment Method *</label>
+              <select id="buy-method-select" name="payment_method" required>
+                <option value="bkash">bKash</option>
+                <option value="nagad">Nagad</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="buy-transaction">Transaction ID *</label>
+              <input id="buy-transaction" name="transaction_id" type="text" required maxlength="100" placeholder="e.g. 9F7A2B1C4D" spellcheck="false">
+            </div>
+            <div class="field">
+              <label for="buy-amount">Payment Amount (BDT) *</label>
+              <input id="buy-amount" name="amount" type="number" value="8000" readonly aria-readonly="true">
+            </div>
+            <div class="field">
+              <label for="buy-date">Payment Date (optional)</label>
+              <input id="buy-date" name="payment_date" type="date">
+            </div>
+            <div class="field full">
+              <div id="buy-error" class="auth-error" role="alert"></div>
+              <button class="button button-primary auth-submit" type="submit" id="buy-submit">Submit Payment Request</button>
+            </div>
+          </form>
+          <div id="buy-success" class="auth-success" hidden></div>
+        </section>
+
+        <aside class="buy-card">
+          <h2>Package status</h2>
+          <div id="buy-status" class="buy-status"></div>
+          <h2>Recent payment requests</h2>
+          <div id="buy-history" class="buy-history"></div>
+        </aside>
+      </div>
+    </main>
+  </section>
+
   <div id="app" class="app-shell" hidden>
     <aside class="sidebar">
-      <div class="brand"><div class="brand-mark">BS</div><div><strong data-i18n="brand">Bus Malik Somiti</strong><small data-i18n="tagline">Management System</small></div></div>
+      <div class="brand"><img class="brand-mark brand-logo" src="../../assets/logo.png" alt="Bus Malik Group"><div><strong data-i18n="brand">Bus Malik Group</strong><small data-i18n="tagline">Management System</small></div></div>
       <nav id="navigation"></nav>
       <div class="sidebar-bottom"><span id="user-label"></span><button id="logout" class="nav-link">↪ <span data-i18n="logout">Sign out</span></button></div>
     </aside>
@@ -32,10 +162,12 @@
       <section id="content" class="content"></section>
     </main>
   </div>
+  <div id="sub-gate" class="sub-gate" hidden></div>
   <div id="update-gate" class="update-gate" hidden></div>
   <div id="modal-root"></div>
   <div id="print-root"></div>
   <div id="toast" class="toast"></div>
+  <script src="subscription.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

@@ -1,16 +1,20 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, nativeImage, clipboard, safeStorage } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const crypto = require('node:crypto');
 const { AssociationDatabase } = require('./database.cjs');
 const { readBusOwnerImport, readFundImport } = require('./bus-owner-import.cjs');
-const { UpdateController } = require('./updater/controller.cjs');
+const { UpdateController, createReleaseManifestFetcher } = require('./updater/controller.cjs');
+const { SubscriptionService } = require('./subscription/subscription-service.cjs');
 
 let mainWindow;
 let database;
 let currentUser = null;
 let busImportSession = null;
 let updates = null;
+let subscriptions = null;
+let subscriptionTimer = null;
+const APP_ICON = path.join(__dirname, '..', 'assets', process.platform === 'win32' ? 'app.ico' : 'app.png');
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1440,
@@ -18,7 +22,8 @@ function createWindow() {
     minWidth: 1050,
     minHeight: 700,
     backgroundColor: '#f4f7fb',
-    title: 'Bus Malik Somiti',
+    title: 'Bus Malik Group',
+    icon: APP_ICON,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -51,6 +56,20 @@ function requireFundImportPermission() {
   const user = requireUser();
   database.requirePermission(user, 'manage_funds');
   return user;
+}
+
+async function subscriptionStatusForLogin() {
+  if (!subscriptions) return null;
+  try {
+    return await withTimeout(
+      subscriptions.getStatus({ forceSync: true }),
+      5000,
+      () => subscriptions.evaluate({ online: false })
+    );
+  } catch (error) {
+    console.error('Subscription check failed during sign-in:', error.message);
+    return subscriptions.evaluate({ online: false });
+  }
 }
 
 function getBusImportSession(id) {
@@ -99,8 +118,51 @@ async function pickImportFile(kind, reader, title) {
   };
 }
 
+// Only the update surface stays reachable while the central minimum version is
+// not satisfied. Everything else - including sign-in, setup and password reset -
+// is refused in the main process, so a hidden login screen is not the only
+// defence.
+const UPDATE_CHANNELS = new Set([
+  'updates:state', 'updates:check', 'updates:download', 'updates:install', 'updates:later',
+  'updates:skip', 'updates:auto', 'updates:gate-check', 'updates:apply',
+  'updates:retry', 'updates:verify'
+]);
+
+// Sign-in/sign-out and the subscription screens must stay reachable while a
+// package is expired, otherwise the customer has no way to renew.
+const ACCESS_EXEMPT_CHANNELS = new Set([
+  'auth:status', 'auth:setup', 'auth:login', 'auth:logout', 'auth:current', 'auth:change-password',
+  'subscription:status', 'subscription:sync', 'subscription:buy-info', 'subscription:history',
+  'subscription:submit-payment', 'subscription:copy', 'subscription:config',
+  'subscription:save-config', 'subscription:test-config'
+]);
+
+function updateRequiredError() {
+  const error = new Error('UPDATE_REQUIRED: A required software update must be installed before signing in.');
+  error.code = 'UPDATE_REQUIRED';
+  return error;
+}
+
 function register(channel, handler) {
-  ipcMain.handle(channel, async (_event, ...args) => handler(...args));
+  const isUpdateChannel = UPDATE_CHANNELS.has(channel);
+  const isExempt = isUpdateChannel || ACCESS_EXEMPT_CHANNELS.has(channel);
+  ipcMain.handle(channel, async (_event, ...args) => {
+    if (!isUpdateChannel && (!updates || !updates.isGateOpen())) throw updateRequiredError();
+    // Every data channel is blocked while a signed-in business has an expired
+    // package. Authentication, updates and the subscription screens stay
+    // reachable so the customer can renew and sign out.
+    if (!isExempt && currentUser && subscriptions) subscriptions.requireAccess();
+    return handler(...args);
+  });
+}
+
+// A subscription sync must not make sign-in feel frozen. The request continues
+// in the background and the verified cache is used if it has not answered yet.
+function withTimeout(promise, milliseconds, fallback) {
+  return Promise.race([
+    promise,
+    new Promise((resolve) => setTimeout(() => resolve(fallback()), milliseconds))
+  ]);
 }
 
 // The Cash In Report is strictly black and white, so the association logo is
@@ -128,17 +190,19 @@ function grayscaleLogo(source) {
 
 function registerIpc() {
   register('auth:status', () => database.hasUsers());
-  register('auth:setup', (data) => {
+  register('auth:setup', async (data) => {
     if (database.hasUsers()) throw new Error('Initial setup has already been completed.');
     const user = database.createUser({ ...data, role: 'admin' }, null);
     currentUser = user;
-    return user;
+    const subscription = await subscriptionStatusForLogin();
+    return { user, subscription };
   });
-  register('auth:login', ({ username, password }) => {
+  register('auth:login', async ({ username, password }) => {
     const user = database.authenticate(username, password);
     currentUser = user;
     busImportSession = null;
-    return user;
+    const subscription = await subscriptionStatusForLogin();
+    return { user, subscription };
   });
   register('auth:logout', () => {
     currentUser = null;
@@ -147,6 +211,48 @@ function registerIpc() {
   });
   register('auth:current', () => currentUser);
   register('auth:change-password', ({ oldPassword, newPassword }) => database.changePassword(requireUser(), oldPassword, newPassword));
+  register('subscription:status', (options = {}) => subscriptions.getStatus({
+    forceSync: options.forceSync === true,
+    allowNetwork: options.allowNetwork !== false
+  }));
+  register('subscription:sync', () => subscriptions.sync());
+  register('subscription:buy-info', () => subscriptions.getBuyInfo());
+  register('subscription:history', async () => {
+    const status = await subscriptions.getStatus({ forceSync: true });
+    return { status, paymentRequests: status.paymentRequests };
+  });
+  register('subscription:submit-payment', async (data) => {
+    const result = await subscriptions.submitPayment(data);
+    if (currentUser) database.audit(currentUser.id, 'submit', 'subscription_payment', result?.id || null, null, {
+      payment_method: data?.payment_method, amount: 8000
+    });
+    return result;
+  });
+  register('subscription:copy', (text) => {
+    clipboard.writeText(String(text || ''));
+    return true;
+  });
+  register('subscription:config', () => {
+    requireAdmin();
+    return {
+      settings: subscriptions.publicConfig(),
+      health: subscriptions.configHealth(),
+      package: subscriptions.evaluate().package
+    };
+  });
+  register('subscription:save-config', (data) => {
+    const user = requireAdmin();
+    subscriptions.saveConfig(user, data || {});
+    return {
+      settings: subscriptions.publicConfig(),
+      health: subscriptions.configHealth(),
+      status: subscriptions.evaluate()
+    };
+  });
+  register('subscription:test-config', (data) => {
+    requireAdmin();
+    return subscriptions.testConfig(data || {});
+  });
   register('users:list', () => {
     requireAdmin();
     return database.listUsers();
@@ -447,23 +553,34 @@ function registerIpc() {
   register('updates:install', () => updates.installAndRestart());
   register('updates:later', () => updates.snooze());
   register('updates:skip', () => updates.skipVersion());
+  register('updates:auto', (enabled) => updates.setAutoUpdate(enabled === true));
+  register('updates:gate-check', () => updates.checkGate({ reason: 'manual' }));
+  register('updates:apply', () => updates.applyMandatoryUpdate());
+  register('updates:retry', () => updates.retryDownload());
+  register('updates:verify', () => updates.verifyDownload());
 }
 
 app.whenReady().then(() => {
   app.setAppUserModelId('bd.busmaliksomiti.desktop');
   try {
     database = new AssociationDatabase(path.join(app.getPath('userData'), 'association.sqlite'));
+    subscriptions = new SubscriptionService({
+      database,
+      userDataDir: app.getPath('userData'),
+      safeStorage,
+      logger: console,
+      appVersion: app.getVersion()
+    });
   } catch (error) {
     // Without the pre-migration copy the ledger must not be touched, so the
     // customer gets the exact folder to free up instead of a blank window.
-    dialog.showErrorBox('Bus Malik Somiti could not start', error.message);
+    dialog.showErrorBox('Bus Malik Group could not start', error.message);
     app.quit();
     return;
   }
-  registerIpc();
-  createWindow();
-  startScheduledBackup();
   const forceDev = process.env.SOMITI_UPDATES_FORCE === '1';
+  // The controller exists before any window or IPC handler so every sign-in
+  // attempt can consult the gate from the first millisecond.
   updates = new UpdateController({
     app,
     getWindows: () => BrowserWindow.getAllWindows(),
@@ -473,13 +590,36 @@ app.whenReady().then(() => {
     disabledReason: process.env.PORTABLE_EXECUTABLE_DIR
       ? 'The portable version cannot update itself. Install the setup program to receive updates.'
       : 'Automatic updates are only active in the installed application.',
-    forceDevConfig: forceDev
+    forceDevConfig: forceDev,
+    releaseManifest: createReleaseManifestFetcher({ app }),
+    prepareInstall: backupBeforeUpdate
   });
+  registerIpc();
+  createWindow();
+  startScheduledBackup();
+  startSubscriptionSync();
   updates.start();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 });
+
+// The installer replaces only program files, but the ledger gets a verified
+// SQLite copy before any mandatory hand-over so a failed migration has a way
+// back. The last three copies are kept; nothing in the live database is moved.
+async function backupBeforeUpdate({ from, to } = {}) {
+  const folder = path.join(app.getPath('userData'), 'updates', 'pre-update-backups');
+  fs.mkdirSync(folder, { recursive: true });
+  const safe = (value) => String(value || 'unknown').replace(/[^\w.-]/g, '_');
+  const file = path.join(folder, `before-${safe(from)}-to-${safe(to)}-${Date.now()}.sqlite`);
+  await database.backup(file);
+  const backups = fs.readdirSync(folder)
+    .filter((name) => name.endsWith('.sqlite'))
+    .map((name) => ({ name, modified: fs.statSync(path.join(folder, name)).mtimeMs }))
+    .sort((a, b) => b.modified - a.modified);
+  for (const entry of backups.slice(3)) fs.rmSync(path.join(folder, entry.name), { force: true });
+  return file;
+}
 
 let backupTimer;
 function startScheduledBackup() {
@@ -488,8 +628,18 @@ function startScheduledBackup() {
   backupTimer = setInterval(run, 60 * 60 * 1000);
 }
 
+function startSubscriptionSync() {
+  const run = () => {
+    if (!subscriptions || !subscriptions.config().configured) return;
+    subscriptions.sync().catch((error) => console.error('Subscription sync failed:', error.message));
+  };
+  setTimeout(run, 8000);
+  subscriptionTimer = setInterval(run, 30 * 60 * 1000);
+}
+
 app.on('will-quit', () => {
   if (backupTimer) clearInterval(backupTimer);
+  if (subscriptionTimer) clearInterval(subscriptionTimer);
   if (updates) updates.stop();
 });
 

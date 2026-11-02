@@ -52,6 +52,10 @@ function main() {
     fail(`CHANGELOG.md has no "## [${version}]" section with release notes.\n`
       + '  Add the section first — the notes are what association users read before they install.');
   }
+  if (found.notes.includes('\uFFFD') || /^\?{3,}/m.test(found.notes)) {
+    fail(`The release notes for ${version} contain corrupted characters.\n`
+      + '  Save CHANGELOG.md as UTF-8 and write the section again before releasing.');
+  }
   fs.mkdirSync(path.join(ROOT, 'dist'), { recursive: true });
   const notesFile = path.join(ROOT, 'dist', 'release-notes.md');
   fs.writeFileSync(notesFile, `${found.notes}\n`);
@@ -60,7 +64,7 @@ function main() {
   setOutput('notes_file', path.relative(ROOT, notesFile).replace(/\\/g, '/'));
   console.log(`Release ${tag} accepted.`);
   console.log(`  package.json version : ${packageJson.version}`);
-  console.log(`  installer name       : BusMalikSomiti-Setup-${version}-x64.exe`);
+  console.log(`  installer name       : BusMalikGroup-Setup-${version}-x64.exe`);
   console.log(`  release notes file   : dist/release-notes.md (${found.notes.split('\n').length} lines)`);
 }
 

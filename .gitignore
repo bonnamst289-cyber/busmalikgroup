@@ -12,5 +12,7 @@ updater-keys/
 dist-*/
 # Temporary verification folders
 .tmp-*
+# Local build logs and verification screenshots
+temp/
 # Windows shortcuts dropped into the project folder
 *.lnk

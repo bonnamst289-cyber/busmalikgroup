@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const PDFDocument = require('pdfkit');
 const ExcelJS = require('exceljs');
+const { isPrivilegedKey } = require('./subscription/config.cjs');
 
 const FONT_DIR = path.join(__dirname, '..', 'assets', 'fonts');
 const BUNDLED_LOGO = path.join(__dirname, '..', 'assets', 'logo.png');
@@ -2326,7 +2327,7 @@ class AssociationDatabase {
   getSettings() {
     const values = this.settingsValues();
     return {
-      name: values.association_name || 'Bus Malik Somiti',
+      name: values.association_name || 'Bus Malik Group',
       address: values.association_address || '',
       phone: values.association_phone || '',
       logo: values.association_logo || '',
@@ -2352,6 +2353,84 @@ class AssociationDatabase {
     return this.getSettings();
   }
 
+  // Subscription settings live in the existing key/value settings table so no
+  // schema migration is needed. The service_role key is never accepted or
+  // stored: the desktop client only ever holds the public anon key plus the
+  // per-business client key used by the submit/read RPCs.
+  getSubscriptionSettings() {
+    const values = this.settingsValues();
+    return {
+      supabase_url: values.subscription_supabase_url || '',
+      anon_key: values.subscription_anon_key || '',
+      business_id: values.subscription_business_id || '',
+      client_key: values.subscription_client_key || '',
+      business_name: values.subscription_business_name || '',
+      contact_number: values.subscription_contact_number || '',
+      enforced: values.subscription_enforced === '1',
+      offline_grace_days: Number(values.subscription_offline_grace_days || 3)
+    };
+  }
+
+  getPublicSubscriptionSettings() {
+    const settings = this.getSubscriptionSettings();
+    return {
+      supabase_url: settings.supabase_url,
+      business_id: settings.business_id,
+      business_name: settings.business_name,
+      contact_number: settings.contact_number,
+      enforced: settings.enforced,
+      offline_grace_days: settings.offline_grace_days,
+      configured: Boolean(settings.supabase_url && settings.anon_key && settings.business_id && settings.client_key),
+      has_anon_key: Boolean(settings.anon_key),
+      has_client_key: Boolean(settings.client_key)
+    };
+  }
+
+  saveSubscriptionSettings(user, data) {
+    if (user.role !== 'admin') throw new Error('Only an administrator can change subscription settings.');
+    const current = this.getSubscriptionSettings();
+    const url = String(data.supabase_url ?? current.supabase_url ?? '').trim().replace(/\/+$/, '');
+    const anonKey = String(data.anon_key || '').trim() || current.anon_key;
+    const businessId = String(data.business_id ?? current.business_id ?? '').trim().toLowerCase();
+    const clientKey = String(data.client_key || '').trim() || current.client_key;
+    const businessName = String(data.business_name ?? current.business_name ?? '').trim();
+    const contactNumber = String(data.contact_number ?? current.contact_number ?? '').trim();
+    const grace = Math.min(30, Math.max(0, Number(data.offline_grace_days ?? current.offline_grace_days) || 0));
+
+    if (url && !/^https:\/\/[a-z0-9-]+(\.[a-z0-9-]+)*$/i.test(url) && !/^http:\/\/localhost(:\d+)?$/i.test(url)) {
+      throw new Error('Supabase URL must be an https:// address.');
+    }
+    if (businessId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(businessId)) {
+      throw new Error('Business ID must be a valid UUID.');
+    }
+    if (anonKey && anonKey.length < 20) throw new Error('The Supabase anon key is too short.');
+    if (clientKey && clientKey.length < 16) throw new Error('The business client key is too short.');
+    if (data.anon_key && isPrivilegedKey(anonKey)) {
+      throw new Error('Never store the Supabase service_role or secret key. Use the public anon/publishable key.');
+    }
+    if (data.client_key && isPrivilegedKey(clientKey)) {
+      throw new Error('Never store the Supabase service_role or secret key as the client key.');
+    }
+    if (businessName && businessName.length > 200) throw new Error('Business name is too long.');
+    if (contactNumber && !/^[0-9+\- ]{6,30}$/.test(contactNumber)) throw new Error('Enter a valid contact number.');
+
+    const write = this.db.prepare('INSERT INTO settings(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value');
+    this.db.transaction(() => {
+      write.run('subscription_supabase_url', url);
+      if (data.anon_key) write.run('subscription_anon_key', anonKey);
+      write.run('subscription_business_id', businessId);
+      if (data.client_key) write.run('subscription_client_key', clientKey);
+      write.run('subscription_business_name', businessName);
+      write.run('subscription_contact_number', contactNumber);
+      write.run('subscription_enforced', data.enforced ? '1' : '0');
+      write.run('subscription_offline_grace_days', String(grace));
+    })();
+    this.audit(user.id, 'update', 'subscription_settings', 'subscription', null, {
+      supabase_url: url, business_id: businessId, enforced: Boolean(data.enforced), offline_grace_days: grace
+    });
+    return this.getPublicSubscriptionSettings();
+  }
+
   logoFile() {
     const configured = this.getSettings().logo;
     if (configured && fs.existsSync(configured)) return configured;
@@ -2370,7 +2449,7 @@ class AssociationDatabase {
     }
     doc.y = textTop;
     doc.fontSize(compact ? 12 : 17).fillColor('#17263d').font(doc.family.head)
-      .text(String(settings.name || 'Bus Malik Somiti'), left, textTop, { width, align: 'center' });
+      .text(String(settings.name || 'Bus Malik Group'), left, textTop, { width, align: 'center' });
     if (settings.address) doc.fontSize(9).fillColor('#52637b').font(doc.family.body).text(String(settings.address), { width, align: 'center' });
     doc.fontSize(compact ? 9 : 11).fillColor('#2468c9').font(doc.family.head).text(String(subtitle || ''), { width, align: 'center' });
     doc.moveDown(compact ? 0.4 : 0.8);
@@ -2450,14 +2529,14 @@ class AssociationDatabase {
         }
         if (compact) {
           doc.font(doc.family.head).fontSize(9).fillColor('#000')
-            .text(settings.name || 'Bus Malik Somiti', left, y, { width, align: 'center' });
+            .text(settings.name || 'Bus Malik Group', left, y, { width, align: 'center' });
           doc.font(doc.family.head).fontSize(10).text('CASH IN REPORT', { width, align: 'center' });
           doc.font(doc.family.body).fontSize(7.5).text(`${period} · ${routeName}`, { width, align: 'center' });
         } else {
           doc.font(doc.family.body).fontSize(9).fillColor('#000')
             .text('BUS MANAGEMENT SYSTEM', left, y, { width, align: 'center' });
           doc.font(doc.family.head).fontSize(17).text('CASH IN REPORT', { width, align: 'center' });
-          doc.font(doc.family.head).fontSize(12).text(settings.name || 'Bus Malik Somiti', { width, align: 'center' });
+          doc.font(doc.family.head).fontSize(12).text(settings.name || 'Bus Malik Group', { width, align: 'center' });
           if (settings.address) doc.font(doc.family.body).fontSize(8).text(settings.address, { width, align: 'center' });
           doc.font(doc.family.body).fontSize(8).text(`Phone: ${settings.phone || '—'}`, { width, align: 'center' });
           const metaY = doc.y + 4;
@@ -2674,14 +2753,14 @@ class AssociationDatabase {
         }
         if (compact) {
           doc.font(doc.family.head).fontSize(9).fillColor('#000')
-            .text(settings.name || 'Bus Malik Somiti', left, y, { width, align: 'center' });
+            .text(settings.name || 'Bus Malik Group', left, y, { width, align: 'center' });
           doc.font(doc.family.head).fontSize(10).text('CASH OUT REPORT', { width, align: 'center' });
           doc.font(doc.family.body).fontSize(7.5).text(`${period}`, { width, align: 'center' });
         } else {
           doc.font(doc.family.body).fontSize(9).fillColor('#000')
             .text('BUS MANAGEMENT SYSTEM', left, y, { width, align: 'center' });
           doc.font(doc.family.head).fontSize(17).text('CASH OUT REPORT', { width, align: 'center' });
-          doc.font(doc.family.head).fontSize(12).text(settings.name || 'Bus Malik Somiti', { width, align: 'center' });
+          doc.font(doc.family.head).fontSize(12).text(settings.name || 'Bus Malik Group', { width, align: 'center' });
           if (settings.address) doc.font(doc.family.body).fontSize(8).text(settings.address, { width, align: 'center' });
           doc.font(doc.family.body).fontSize(8).text(`Phone: ${settings.phone || '—'}`, { width, align: 'center' });
           const metaY = doc.y + 4;
@@ -2873,14 +2952,14 @@ class AssociationDatabase {
         }
         if (compact) {
           doc.font(doc.family.head).fontSize(9).fillColor('#000')
-            .text(settings.name || 'Bus Malik Somiti', left, y, { width, align: 'center' });
+            .text(settings.name || 'Bus Malik Group', left, y, { width, align: 'center' });
           doc.font(doc.family.head).fontSize(10).text('BANK REPORT', { width, align: 'center' });
           doc.font(doc.family.body).fontSize(7.5).text(`Generated: ${generated}`, { width, align: 'center' });
         } else {
           doc.font(doc.family.body).fontSize(9).fillColor('#000')
             .text('BUS MANAGEMENT SYSTEM', left, y, { width, align: 'center' });
           doc.font(doc.family.head).fontSize(17).text('BANK REPORT', { width, align: 'center' });
-          doc.font(doc.family.head).fontSize(12).text(settings.name || 'Bus Malik Somiti', { width, align: 'center' });
+          doc.font(doc.family.head).fontSize(12).text(settings.name || 'Bus Malik Group', { width, align: 'center' });
           if (settings.address) doc.font(doc.family.body).fontSize(8).text(settings.address, { width, align: 'center' });
           doc.font(doc.family.body).fontSize(8).text(`Phone: ${settings.phone || '—'}`, { width, align: 'center' });
           doc.font(doc.family.body).fontSize(8).text(`Generated: ${generated}`, { width, align: 'center' });

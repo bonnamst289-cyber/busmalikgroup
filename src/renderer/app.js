@@ -1,10 +1,11 @@
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const state = { user: null, page: 'dashboard', language: localStorage.getItem('language') || 'en', search: '', busFilters: { route_id: '', status: '' }, bankView: { from: '', to: '', bank_id: '' }, owners: [], buses: [], routes: [], funds: [], members: [] };
+window.somitiState = state;
 
 const words = {
   en: {
-    brand: 'Bus Malik Somiti', workspace: 'ASSOCIATION WORKSPACE', offline: 'Offline ready', logout: 'Sign out',
+    brand: 'Bus Malik Group', workspace: 'ASSOCIATION WORKSPACE', offline: 'Offline ready', logout: 'Sign out',
     dashboard: 'Dashboard', owners: 'Bus Owners', buses: 'Buses', routes: 'Routes',
     members: 'Members', cashbook: 'Cashbook', reports: 'Reports',
     users: 'Users & Permissions', settings: 'Settings & Backup', totalBuses: 'Total Buses',
@@ -234,7 +235,7 @@ const words = {
     tagline: 'Management System',
     income_categories: 'Income Categories',
     expense_categories: 'Expense Categories',
-    importExcel: 'Import from Excel',
+    importExcel: 'Import from Excel or Word',
     importBusOwnerTitle: 'Import Bus Owners',
     importBusOwnerHint: 'Upload an .xlsx, .xls or .docx file containing owner name, bus number, father name, mobile number, address and status. Bus numbers must be unique; existing owners are matched by mobile number.',
     importFundsTitle: 'Import Funds',
@@ -309,20 +310,48 @@ const words = {
     bankDepositHint: 'A deposit moves money from the selected fund into the selected bank. It is a transfer, not new income.',
     depositFilterHint: 'Filter the deposit history by date and bank. The report below always shows all deposits.',
     allBanks: 'All Banks', resetFilters: 'Reset',
-    softwareUpdate: 'Software Update', currentVersion: 'Installed Version', checkForUpdates: 'Check for Updates',
+    softwareUpdate: 'Software Update', softwareName: 'Software Name', currentVersion: 'Installed Version', latestVersion: 'Latest Version', checkForUpdates: 'Check for Updates',
+    gateChecking: 'Checking the latest version with the update server…',
+    gateCheckingHint: 'Sign-in stays locked until this check finishes.',
+    gateConnectionRequired: 'The software version could not be verified online.',
+    gateConnectionHint: 'Connect this computer to the internet, then choose Retry Connection.',
+    updateServerUnreachable: 'The update server could not be reached. Check the internet connection and try again.',
+    gateNeverVerified: 'This installation has not been verified against the update server yet.',
+    gateBuildUnverified: 'The updated build needs one online verification before it can be used.',
+    gateGraceExpired: 'The offline verification window has expired. Connect to the internet to continue.',
+    gateClockSuspect: 'The computer clock changed while offline. Connect to verify the version.',
+    gateRequiredTitle: 'Update required to continue',
+    gateIntro: 'This older installation is blocked by the published version policy. Install the required update to unlock sign-in.',
+    gateBlockedLogin: 'Sign-in and every module stay locked until the required version is installed.',
+    gateRequiredVersion: 'Required version', gateSoftware: 'Software',
+    gateDownloaded: 'Update downloaded', gateNotDownloaded: 'The update has not been downloaded yet.',
+    gateChecksumVerified: 'Download verified with SHA256', gateChecksumPending: 'Download is not verified yet',
+    retryDownload: 'Retry Download', verifyUpdate: 'Verify Update', retryConnection: 'Retry Connection',
+    updateVerified: 'The update file was verified successfully.',
+    offlineVerifiedUntil: 'Offline access was verified until',
+    gateUpdating: 'Downloading the required update. Keep the application open.',
     updateAvailable: 'Update available', updateReady: 'Update downloaded and ready to install',
     updateDownloading: 'Downloading update', updateUpToDate: 'You are using the latest version',
     updateChecking: 'Checking for updates...', installUpdate: 'Install Update and Restart',
     updateLater: 'Remind me later', skipVersion: 'Skip this version', updateNow: 'Update now',
     mandatoryUpdate: 'This update is required to keep using the software.',
     mandatoryUpdateHint: 'Please install it now. The software will close by itself and reopen with the new version.',
-    releaseNotes: 'What is new', releaseDate: 'Release date', minimumVersion: 'Minimum supported version',
+    releaseNotes: 'What is new', releaseNotesButton: 'Release Notes', hideReleaseNotes: 'Hide Notes',
+    releaseDate: 'Release date', minimumVersion: 'Minimum supported version',
     restartingForUpdate: 'The software will close and restart to finish the update.',
     updateFailed: 'The update could not be completed.', lastChecked: 'Last checked', neverChecked: 'Never checked',
     downloadsInBackground: 'The update downloads in the background. You can keep working.',
+    updateNoticeHint: 'Choose Update now to download and install it. Your accounts and database are not touched.',
     updatesDisabled: 'Automatic updates are not configured for this installation.',
     updateOffline: 'Offline — the update check could not reach the server',
     blockedOffline: 'A security policy requires this software to verify updates online. Connect to the internet to continue.',
+    autoUpdate: 'Automatically check for updates', autoUpdateHint: 'When enabled, the app checks GitHub every few hours and shows a notice when a new version is available.',
+    updateHistory: 'Update history', noUpdateHistory: 'No update activity recorded yet.', checksumVerified: 'SHA256 verified',
+    historyAvailable: 'Update found', historyDownloaded: 'Download complete', historyInstalling: 'Installing', historyFailed: 'Failed',
+    historyGateBlocked: 'Version blocked', historyVerified: 'Update verified after restart',
+    historyBelowMinimum: 'Installed version is below the required version',
+    historyKnownObsolete: 'This version is no longer allowed',
+    subscription: 'Subscription', subscriptionBlocked: 'Your subscription is not active. Renew the Yearly Business Package to continue.'
   },
   bn: {
     brand: 'বাস মালিক সমিতি', workspace: 'সমিতি ব্যবস্থাপনা', offline: 'অফলাইনে প্রস্তুত', logout: 'লগ আউট',
@@ -562,7 +591,7 @@ const words = {
     tagline: 'ব্যবস্থাপনা সফটওয়্যার',
     income_categories: 'আয়ের খাত',
     expense_categories: 'ব্যয়ের খাত',
-    importExcel: 'এক্সেল থেকে আমদানি',
+    importExcel: 'এক্সেল বা ওয়ার্ড থেকে আমদানি',
     importBusOwnerTitle: 'বাস মালিক আমদানি',
     importBusOwnerHint: 'মালিকের নাম, বাস নম্বর, পিতার নাম, মোবাইল নম্বর, ঠিকানা ও স্ট্যাটাসসহ .xlsx, .xls অথবা .docx ফাইল আপলোড করুন। বাস নম্বর অনন্য হতে হবে; মোবাইল নম্বর দিয়ে পুরোনো মালিক শনাক্ত হবে।',
     importFundsTitle: 'তহবিল আমদানি',
@@ -637,26 +666,54 @@ const words = {
     bankDepositHint: 'জমা নির্বাচিত তহবিল থেকে টাকা নির্বাচিত ব্যাংকে স্থানান্তর করে। এটি নতুন আয় নয়।',
     depositFilterHint: 'তারিখ ও ব্যাংক দিয়ে জমার ইতিহাস ফিল্টার করুন। নিচের রিপোর্টে সব জমা দেখানো হয়।',
     allBanks: 'সব ব্যাংক', resetFilters: 'রিসেট',
-    softwareUpdate: 'সফটওয়্যার আপডেট', currentVersion: 'ইনস্টল করা ভার্সন', checkForUpdates: 'আপডেট পরীক্ষা করুন',
+    softwareUpdate: 'সফটওয়্যার আপডেট', softwareName: 'সফটওয়্যারের নাম', currentVersion: 'ইনস্টল করা ভার্সন', latestVersion: 'সর্বশেষ ভার্সন', checkForUpdates: 'আপডেট পরীক্ষা করুন',
+    gateChecking: 'আপডেট সার্ভার থেকে সর্বশেষ ভার্সন যাচাই করা হচ্ছে…',
+    gateCheckingHint: 'যাচাই শেষ না হওয়া পর্যন্ত লগইন বন্ধ থাকবে।',
+    gateConnectionRequired: 'সফটওয়্যারের ভার্সন অনলাইনে যাচাই করা যায়নি।',
+    gateConnectionHint: 'কম্পিউটারটি ইন্টারনেটে যুক্ত করুন, তারপর “আবার সংযোগ করুন” চাপুন।',
+    updateServerUnreachable: 'আপডেট সার্ভারে পৌঁছানো যায়নি। ইন্টারনেট সংযোগ দেখে আবার চেষ্টা করুন।',
+    gateNeverVerified: 'এই ইনস্টলেশনটি এখনো আপডেট সার্ভারে যাচাই হয়নি।',
+    gateBuildUnverified: 'নতুন ইনস্টল করা ভার্সনটি ব্যবহারের আগে একবার অনলাইনে যাচাই করতে হবে।',
+    gateGraceExpired: 'অফলাইনে ব্যবহারের সময়সীমা শেষ হয়েছে। চালিয়ে যেতে ইন্টারনেটে যুক্ত করুন।',
+    gateClockSuspect: 'অফলাইনে থাকার সময় কম্পিউটারের ঘড়ি পরিবর্তন হয়েছে। যাচাই করতে ইন্টারনেটে যুক্ত করুন।',
+    gateRequiredTitle: 'চালিয়ে যেতে আপডেট আবশ্যক',
+    gateIntro: 'প্রকাশিত ভার্সন নীতির কারণে এই পুরোনো ইনস্টলেশনটি বন্ধ আছে। লগইন খুলতে আবশ্যক আপডেটটি ইনস্টল করুন।',
+    gateBlockedLogin: 'আবশ্যক ভার্সন ইনস্টল না হওয়া পর্যন্ত লগইন ও সব মডিউল বন্ধ থাকবে।',
+    gateRequiredVersion: 'আবশ্যক ভার্সন', gateSoftware: 'সফটওয়্যার',
+    gateDownloaded: 'আপডেট ডাউনলোড হয়েছে', gateNotDownloaded: 'আপডেট এখনো ডাউনলোড হয়নি।',
+    gateChecksumVerified: 'SHA256 দিয়ে ডাউনলোড যাচাই হয়েছে', gateChecksumPending: 'ডাউনলোড এখনো যাচাই হয়নি',
+    retryDownload: 'আবার ডাউনলোড করুন', verifyUpdate: 'আপডেট যাচাই করুন', retryConnection: 'আবার সংযোগ করুন',
+    updateVerified: 'আপডেট ফাইল সফলভাবে যাচাই হয়েছে।',
+    offlineVerifiedUntil: 'অফলাইনে ব্যবহারের অনুমতি ছিল',
+    gateUpdating: 'আবশ্যক আপডেট ডাউনলোড হচ্ছে। অ্যাপ্লিকেশনটি খোলা রাখুন।',
     updateAvailable: 'নতুন আপডেট পাওয়া গেছে', updateReady: 'আপডেট ডাউনলোড হয়েছে, ইনস্টল করার জন্য প্রস্তুত',
     updateDownloading: 'আপডেট ডাউনলোড হচ্ছে', updateUpToDate: 'আপনি সর্বশেষ ভার্সন ব্যবহার করছেন',
     updateChecking: 'আপডেট খোঁজা হচ্ছে...', installUpdate: 'ইনস্টল করে রিস্টার্ট করুন',
     updateLater: 'পরে মনে করিয়ে দিন', skipVersion: 'এই ভার্সন বাদ দিন', updateNow: 'এখনই আপডেট করুন',
     mandatoryUpdate: 'সফটওয়্যারটি ব্যবহার চালিয়ে যেতে এই আপডেটটি আবশ্যক।',
     mandatoryUpdateHint: 'অনুগ্রহ করে এখনই ইনস্টল করুন। সফটওয়্যারটি নিজে থেকে বন্ধ হয়ে নতুন ভার্সনে চালু হবে।',
-    releaseNotes: 'নতুন কী আছে', releaseDate: 'প্রকাশের তারিখ', minimumVersion: 'সর্বনিম্ন সমর্থিত ভার্সন',
+    releaseNotes: 'নতুন কী আছে', releaseNotesButton: 'রিলিজ নোট', hideReleaseNotes: 'নোট লুকান',
+    releaseDate: 'প্রকাশের তারিখ', minimumVersion: 'সর্বনিম্ন সমর্থিত ভার্সন',
     restartingForUpdate: 'আপডেট শেষ করতে সফটওয়্যারটি বন্ধ হয়ে আবার চালু হবে।',
     updateFailed: 'আপডেট সম্পন্ন করা যায়নি।', lastChecked: 'সর্বশেষ পরীক্ষা', neverChecked: 'কখনো পরীক্ষা হয়নি',
     downloadsInBackground: 'আপডেট ব্যাকগ্রাউন্ডে ডাউনলোড হচ্ছে। আপনি কাজ চালিয়ে যেতে পারেন।',
+    updateNoticeHint: 'ইনস্টল করতে “এখনই আপডেট করুন” চাপুন। আপনার হিসাব ও ডাটাবেজ স্পর্শ করা হয় না।',
     updatesDisabled: 'এই ইনস্টলেশনের জন্য স্বয়ংক্রিয় আপডেট কনফিগার করা নেই।',
     updateOffline: 'অফলাইন — আপডেট সার্ভারে পৌঁছানো যায়নি',
     blockedOffline: 'নিরাপত্তা নীতির কারণে সফটওয়্যারটি অনলাইনে আপডেট যাচাই করতে হবে। চালিয়ে যেতে ইন্টারনেটে সংযুক্ত হোন।',
+    autoUpdate: 'স্বয়ংক্রিয়ভাবে আপডেট পরীক্ষা করুন', autoUpdateHint: 'চালু থাকলে অ্যাপটি কয়েক ঘণ্টা পরপর GitHub-এ আপডেট খোঁজে এবং নতুন ভার্সন এলে জানায়।',
+    updateHistory: 'আপডেটের ইতিহাস', noUpdateHistory: 'এখনো কোনো আপডেট কার্যকলাপ নেই।', checksumVerified: 'SHA256 যাচাই সম্পন্ন',
+    historyAvailable: 'আপডেট পাওয়া গেছে', historyDownloaded: 'ডাউনলোড সম্পন্ন', historyInstalling: 'ইনস্টল হচ্ছে', historyFailed: 'ব্যর্থ',
+    historyGateBlocked: 'ভার্সন বন্ধ করা হয়েছে', historyVerified: 'রিস্টার্টের পর আপডেট যাচাই হয়েছে',
+    historyBelowMinimum: 'ইনস্টল করা ভার্সন প্রয়োজনীয় ভার্সনের চেয়ে পুরোনো',
+    historyKnownObsolete: 'এই ভার্সনটি আর ব্যবহার করা যাবে না',
+    subscription: 'সাবস্ক্রিপশন', subscriptionBlocked: 'আপনার সাবস্ক্রিপশন সক্রিয় নয়। চালিয়ে যেতে ইয়ারলি বিজনেস প্যাকেজ নবায়ন করুন।',
   }
 };
 
 const menu = [
   ['dashboard', '⌂'], ['owners', '♙'], ['buses', '▣'], ['routes', '⇄'],
-  ['members', '♧'], ['cashbook', '৳'], ['banks', '▦'], ['funds', '◉'], ['reports', '▤'], ['cashInReport', '▥'], ['cashOutReport', '▧'], ['users', '♙'], ['settings', '⚙']
+  ['members', '♧'], ['cashbook', '৳'], ['banks', '▦'], ['funds', '◉'], ['reports', '▤'], ['cashInReport', '▥'], ['cashOutReport', '▧'], ['subscription', '◈'], ['users', '♙'], ['settings', '⚙']
 ];
 
 const entityConfig = {
@@ -860,7 +917,9 @@ const MESSAGE_PATTERNS = [
   [/^Choose a different database file\.$/, 'chooseDifferentFile'],
   [/^Only the configured backup folder can be opened\.$/, 'backupFolderOnly'],
   [/^Backup integrity check failed: (.*)$/, 'backupCheckFailed', (detail) => [detail],],
-  [/^Backup is missing required table: (\w+)$/, 'backupMissingTable', (table) => [table],]
+  [/^Backup is missing required table: (\w+)$/, 'backupMissingTable', (table) => [table],],
+  [/^SUBSCRIPTION_BLOCKED:(\w+)$/, 'subscriptionBlocked'],
+  [/ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ETIMEDOUT|ENETUNREACH|fetch failed|could not be reached|did not answer in time/i, 'updateServerUnreachable']
 ];
 
 function tf(key, ...args) {
@@ -886,24 +945,68 @@ function nav() {
 async function showAuth() {
   $('#app').hidden = true;
   $('#auth').hidden = false;
+  $('#sub-gate').hidden = true;
+  if (window.SomitiSubscription) window.SomitiSubscription.hideBuy();
   const setupNeeded = !(await window.somiti.auth.status());
   $('#auth-title').textContent = setupNeeded ? t('setup') : t('brand');
   $('#auth-description').textContent = setupNeeded ? t('setupPrompt') : t('signInPrompt');
-  $('#auth-form').innerHTML = `${setupNeeded ? `<div class="field"><label>${t('full_name')}</label><input name="full_name" required></div>` : ''}
-    <div class="field"><label>${t('username')}</label><input name="username" required autocomplete="username"></div>
-    ${setupNeeded ? `<div class="field"><label>${t('password')}</label><input name="password" type="password" required minlength="8" autocomplete="new-password"></div>` :
-      `<div class="field"><label>${t('password')}</label><input name="password" type="password" required autocomplete="current-password"></div>`}
-    <button class="button button-primary" type="submit">${setupNeeded ? t('setup') : t('login')}</button>`;
+  const nameField = $('#auth-name-field');
+  nameField.hidden = !setupNeeded;
+  const fullName = $('#auth-fullname');
+  fullName.required = setupNeeded;
+  const password = $('#auth-password');
+  password.type = 'password';
+  password.minLength = setupNeeded ? 8 : 0;
+  password.autocomplete = setupNeeded ? 'new-password' : 'current-password';
+  $('#auth-toggle-password').textContent = 'Show';
+  $('#auth-submit').textContent = setupNeeded ? t('setup') : t('login');
   $('#auth-error').textContent = '';
+  $('#auth-notice').hidden = true;
+  const remembered = localStorage.getItem('somiti_remembered_username');
+  if (remembered) {
+    $('#auth-username').value = remembered;
+    $('#auth-remember').checked = true;
+  }
+  if (window.SomitiSubscription) window.SomitiSubscription.refreshAuthCard();
+
   $('#auth-form').onsubmit = async (event) => {
     event.preventDefault();
     const data = Object.fromEntries(new FormData(event.currentTarget).entries());
+    const username = String(data.username || '').trim();
+    const enteredPassword = String(data.password || '');
+    const enteredName = String(data.full_name || '').trim();
+    if (!username) { $('#auth-error').textContent = t('invalid'); return; }
+    if (setupNeeded && !enteredName) { $('#auth-error').textContent = t('invalid'); return; }
+    if (setupNeeded && enteredPassword.length < 8) { $('#auth-error').textContent = t('passwordShort'); return; }
+    if (!enteredPassword) { $('#auth-error').textContent = t('invalid'); return; }
+    const submit = $('#auth-submit');
+    submit.disabled = true;
+    submit.textContent = t('loading');
+    $('#auth-error').textContent = '';
     try {
-      state.user = setupNeeded ? await window.somiti.auth.setup(data) : await window.somiti.auth.login(data);
+      const result = setupNeeded
+        ? await window.somiti.auth.setup({ username, password: enteredPassword, full_name: enteredName })
+        : await window.somiti.auth.login({ username, password: enteredPassword });
+      state.user = result && result.user ? result.user : result;
+      state.subscription = result && result.subscription ? result.subscription : null;
+      if ($('#auth-remember').checked) localStorage.setItem('somiti_remembered_username', username);
+      else localStorage.removeItem('somiti_remembered_username');
       $('#auth').hidden = true;
+      const allowed = window.SomitiSubscription
+        ? await window.SomitiSubscription.afterLogin(state.subscription)
+        : true;
+      if (!allowed) {
+        $('#app').hidden = true;
+        return;
+      }
       $('#app').hidden = false;
       await initializeApp();
-    } catch (error) { $('#auth-error').textContent = explain(error.message); }
+    } catch (error) {
+      $('#auth-error').textContent = explain(error.message);
+    } finally {
+      submit.disabled = false;
+      submit.textContent = setupNeeded ? t('setup') : t('login');
+    }
   };
 }
 
@@ -2032,7 +2135,7 @@ async function renderReports() {
         ? `<h3 class="report-section-title">${t('routeSummary')}</h3><table><thead><tr>${summaryHeaders.map((key) => `<th>${t(key)}</th>`).join('')}</tr></thead><tbody>${reportSummary.map((row) => `<tr>${summaryCells(row).map((cell) => `<td>${cell}</td>`).join('')}</tr>`).join('')}</tbody></table>`
         : '';
       $('#print-root').innerHTML = `<div class="print-page">
-        <div class="print-head"><h1>${escapeHtml(settings.name || 'Bus Malik Somiti')}</h1>
+        <div class="print-head"><h1>${escapeHtml(settings.name || 'Bus Malik Group')}</h1>
         ${settings.address ? `<p>${escapeHtml(settings.address)}</p>` : ''}
         <h2>${escapeHtml(reportTitle)}</h2><p>${escapeHtml(reportRange)} · ${reportCount}</p>
         <p>${t('reportDate')}: ${escapeHtml(new Date().toLocaleString())}</p></div>
@@ -2244,7 +2347,7 @@ async function renderBankManagement() {
     const fundCells = (row) => `<tr><td>${escapeHtml(row.fund_name)}</td><td>${escapeHtml(row.bank_name)}</td>
       <td>${escapeHtml(row.account_number)}</td><td>${row.deposit_count}</td><td>${formatMoney(row.total_paisa)}</td></tr>`;
     return `<div class="print-page">
-      <div class="print-head"><h1>${escapeHtml(settings.name || 'Bus Malik Somiti')}</h1>
+      <div class="print-head"><h1>${escapeHtml(settings.name || 'Bus Malik Group')}</h1>
       ${settings.address ? `<p>${escapeHtml(settings.address)}</p>` : ''}
       <h2>${t('bankReport')}</h2><p>${t('generatedAt')}: ${escapeHtml(new Date().toLocaleString())}</p></div>
       <h3 class="report-section-title">${t('bankWiseReport')}</h3>
@@ -2758,7 +2861,7 @@ async function renderSettings() {
   }));
 }
 
-const updateView = { snapshot: null };
+const updateView = { snapshot: null, showNotes: false };
 
 function updateStatusText(snapshot) {
   const version = snapshot.latest_version ? ` ${snapshot.current_version} → ${snapshot.latest_version}` : '';
@@ -2786,11 +2889,19 @@ function updateNotes(snapshot) {
 function updateProgressBar(snapshot) {
   if (snapshot.status !== 'downloading') return '';
   const percent = snapshot.download?.percent ?? 0;
+  // The page CSP forbids inline style attributes, so the width is applied
+  // through the CSSOM after the banner is painted.
   return `<div class="update-progress" role="progressbar" aria-valuenow="${percent}" aria-valuemin="0" aria-valuemax="100">
-    <div class="update-progress-bar" style="width:${percent}%"></div></div>`;
+    <div class="update-progress-bar" data-percent="${percent}"></div></div>`;
 }
 
-function updateActions(snapshot, { gate = false } = {}) {
+function paintUpdateProgress() {
+  $$('.update-progress-bar[data-percent]').forEach((bar) => {
+    bar.style.width = `${Math.max(0, Math.min(100, Number(bar.dataset.percent) || 0))}%`;
+  });
+}
+
+function updateActions(snapshot) {
   const buttons = [];
   if (snapshot.status === 'blocked_offline' || snapshot.status === 'error') {
     buttons.push(`<button class="button button-primary" data-update-action="check">${t('checkForUpdates')}</button>`);
@@ -2801,11 +2912,14 @@ function updateActions(snapshot, { gate = false } = {}) {
   } else if (snapshot.status !== 'downloading') {
     buttons.push(`<button class="button button-primary" data-update-action="install">${t('updateNow')}</button>`);
   }
-  if (!snapshot.mandatory && !gate) {
+  if (!snapshot.mandatory) {
     buttons.push(`<button class="button button-outline" data-update-action="later">${t('updateLater')}</button>`);
     if (snapshot.status !== 'ready' && snapshot.status !== 'downloading') {
       buttons.push(`<button class="button button-outline" data-update-action="skip">${t('skipVersion')}</button>`);
     }
+  }
+  if (String(snapshot.release_notes || '').trim() && snapshot.status !== 'downloading') {
+    buttons.unshift(`<button class="button button-outline" data-update-action="notes">${updateView.showNotes ? t('hideReleaseNotes') : t('releaseNotesButton')}</button>`);
   }
   return `<div class="update-actions">${buttons.join('')}</div>`;
 }
@@ -2813,74 +2927,194 @@ function updateActions(snapshot, { gate = false } = {}) {
 function bannerHtml(snapshot) {
   return `<div class="update-banner-card">
     <div class="update-banner-text"><strong>${escapeHtml(updateStatusText(snapshot))}</strong>
-      <span>${snapshot.status === 'downloading' ? t('downloadsInBackground') : escapeHtml(t('releaseNotes'))}</span></div>
+      <span>${snapshot.status === 'downloading' ? t('downloadsInBackground') : escapeHtml(t('updateNoticeHint'))}</span></div>
     ${updateProgressBar(snapshot)}
+    ${updateView.showNotes && snapshot.status !== 'downloading' ? updateNotes(snapshot) : ''}
     ${updateActions(snapshot)}
   </div>`;
 }
 
+function gateFactsHtml(gate, snapshot) {
+  const rows = [
+    [t('gateSoftware'), snapshot.software_name || 'Bus Malik Group'],
+    [t('currentVersion'), gate.current_version || snapshot.current_version || '—'],
+    [t('gateRequiredVersion'), gate.minimum_required_version || '—'],
+    [t('latestVersion'), gate.latest_version || '—']
+  ];
+  return `<div class="update-facts gate-facts">${rows.map(([label, value]) => (
+    `<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`
+  )).join('')}</div>`;
+}
+
+function gateCard(body) {
+  return `<div class="update-gate-card"><img class="brand-mark brand-logo" src="../../assets/logo.png" alt="">${body}</div>`;
+}
+
 function gateHtml(snapshot) {
-  if (snapshot.status === 'blocked_offline') {
-    return `<div class="update-gate-card">
-      <div class="brand-mark">BS</div>
+  const gate = snapshot.gate || {};
+  if (gate.status === 'checking') {
+    return gateCard(`
       <h2>${t('softwareUpdate')}</h2>
-      <p>${escapeHtml(t('blockedOffline'))}</p>
-      ${snapshot.error ? `<p class="error-text">${escapeHtml(explain(snapshot.error))}</p>` : ''}
-      ${updateActions(snapshot, { gate: true })}
-    </div>`;
+      <p>${escapeHtml(t('gateChecking'))}</p>
+      <p class="muted">${escapeHtml(t('gateCheckingHint'))}</p>
+      ${gateFactsHtml(gate, snapshot)}
+      ${gate.error ? `<p class="error-text">${escapeHtml(explain(gate.error))}</p>` : ''}
+      <div class="update-actions"><button class="button button-outline" data-update-action="gate-check">${t('retryConnection')}</button></div>`);
   }
-  return `<div class="update-gate-card">
-    <div class="brand-mark">BS</div>
-    <h2>${t('softwareUpdate')} ${escapeHtml(snapshot.latest_version || '')}</h2>
-    <p>${escapeHtml(t('mandatoryUpdate'))} ${escapeHtml(t('mandatoryUpdateHint'))}</p>
-    ${updateProgressBar(snapshot)}
-    ${snapshot.error ? `<p class="error-text">${escapeHtml(explain(snapshot.error))}</p>` : ''}
+  if (gate.status === 'connection_error') {
+    const reasonKey = {
+      never_verified: 'gateNeverVerified',
+      build_unverified: 'gateBuildUnverified',
+      grace_expired: 'gateGraceExpired',
+      clock_suspect: 'gateClockSuspect'
+    }[gate.reason];
+    return gateCard(`
+      <h2>${t('softwareUpdate')}</h2>
+      <p>${escapeHtml(t('gateConnectionRequired'))}</p>
+      ${reasonKey ? `<p class="muted">${escapeHtml(t(reasonKey))}</p>` : ''}
+      <p class="muted">${escapeHtml(t('gateConnectionHint'))}</p>
+      ${gateFactsHtml(gate, snapshot)}
+      ${gate.error ? `<p class="error-text">${escapeHtml(explain(gate.error))}</p>` : ''}
+      <div class="update-actions"><button class="button button-primary" data-update-action="gate-check">${t('retryConnection')}</button></div>`);
+  }
+
+  const downloading = snapshot.status === 'downloading';
+  const installing = snapshot.status === 'installing';
+  const ready = snapshot.status === 'ready';
+  const verified = snapshot.checksum?.verified === true;
+  const percent = Math.max(0, Math.min(100, Math.round(snapshot.download?.percent ?? 0)));
+  return gateCard(`
+    <div class="update-gate-eyebrow">${escapeHtml(t('mandatoryUpdate'))}</div>
+    <h2>${escapeHtml(t('gateRequiredTitle'))}</h2>
+    <p>${escapeHtml(t('gateIntro'))}</p>
+    ${gateFactsHtml(gate, snapshot)}
     ${updateNotes(snapshot)}
-    ${updateActions(snapshot, { gate: true })}
-  </div>`;
+    ${updateProgressBar(snapshot)}
+    ${downloading
+      ? `<p class="muted">${escapeHtml(t('gateUpdating'))} ${percent}%</p>`
+      : `<p class="muted">${escapeHtml(verified ? t('gateChecksumVerified') : ready ? t('gateChecksumPending') : t('gateNotDownloaded'))}</p>`}
+    ${snapshot.error ? `<p class="error-text">${escapeHtml(explain(snapshot.error))}</p>` : ''}
+    <p class="update-gate-lock">${escapeHtml(t('gateBlockedLogin'))}</p>
+    <div class="update-actions">
+      <button class="button button-primary" data-update-action="gate-update"${downloading || installing ? ' disabled' : ''}>${escapeHtml(downloading ? t('updateDownloading') : installing ? t('restartingForUpdate') : ready ? t('installUpdate') : t('updateNow'))}</button>
+      <button class="button button-outline" data-update-action="gate-retry"${downloading || installing ? ' disabled' : ''}>${t('retryDownload')}</button>
+      <button class="button button-outline" data-update-action="gate-verify"${ready && !verified ? '' : ' disabled'}>${t('verifyUpdate')}</button>
+    </div>`);
+}
+
+function updateHistoryHtml(snapshot) {
+  const history = Array.isArray(snapshot.history) ? snapshot.history.slice(0, 8) : [];
+  if (!history.length) return `<div class="update-history"><strong>${t('updateHistory')}</strong><p class="muted">${t('noUpdateHistory')}</p></div>`;
+  const labels = {
+    available: t('historyAvailable'),
+    downloaded: t('historyDownloaded'),
+    installing: t('historyInstalling'),
+    failed: t('historyFailed'),
+    gate_blocked: t('historyGateBlocked'),
+    verified: t('historyVerified')
+  };
+  const reasonLabels = {
+    below_minimum: t('historyBelowMinimum'),
+    known_obsolete: t('historyKnownObsolete')
+  };
+  const rows = history.map((entry) => {
+    const label = labels[entry.action] || entry.action;
+    const when = entry.at ? new Date(entry.at).toLocaleString() : '—';
+    const version = entry.version ? ` ${entry.version}` : '';
+    const error = entry.error ? `<span class="error-text">${escapeHtml(reasonLabels[entry.error] || entry.error)}</span>` : '';
+    return `<li><span>${escapeHtml(label)}${escapeHtml(version)}</span><time>${escapeHtml(when)}</time>${error}</li>`;
+  }).join('');
+  return `<div class="update-history"><strong>${t('updateHistory')}</strong><ul>${rows}</ul></div>`;
 }
 
 function updateSettingsHtml(snapshot) {
   if (!snapshot) return `<div class="empty">${t('loading')}</div>`;
   const lastCheck = snapshot.last_check ? new Date(snapshot.last_check).toLocaleString() : t('neverChecked');
+  const checksum = snapshot.checksum?.verified ? `<span class="update-verified">${escapeHtml(t('checksumVerified'))}</span>` : '';
+  const gate = snapshot.gate || {};
+  const grace = gate.status === 'current' && gate.offline && gate.grace_expires_at
+    ? `<p class="muted">${escapeHtml(t('offlineVerifiedUntil'))} ${escapeHtml(new Date(gate.grace_expires_at).toLocaleString())}</p>`
+    : '';
   return `<div class="update-settings">
     <div class="update-facts">
+      <div><span>${t('softwareName')}</span><strong>${escapeHtml(snapshot.software_name || 'Bus Malik Group')}</strong></div>
       <div><span>${t('currentVersion')}</span><strong>${escapeHtml(snapshot.current_version || '—')}</strong></div>
+      <div><span>${t('minimumVersion')}</span><strong>${escapeHtml(snapshot.minimum_required_version || '—')}</strong></div>
+      <div><span>${t('latestVersion')}</span><strong>${escapeHtml(snapshot.latest_version || '—')}</strong></div>
+      <div><span>${t('releaseDate')}</span><strong>${escapeHtml(snapshot.release_date ? new Date(snapshot.release_date).toLocaleDateString() : '—')}</strong></div>
       <div><span>${t('lastChecked')}</span><strong>${escapeHtml(lastCheck)}</strong></div>
-      <div><span>${t('status')}</span><strong>${escapeHtml(updateStatusText(snapshot) || '—')}</strong></div>
+      <div><span>${t('status')}</span><strong>${escapeHtml(updateStatusText(snapshot) || '—')} ${checksum}</strong></div>
     </div>
+    <label class="update-preference"><input type="checkbox" data-update-auto${snapshot.auto_update ? ' checked' : ''}${snapshot.enabled ? '' : ' disabled'}> <span><strong>${t('autoUpdate')}</strong><small>${t('autoUpdateHint')}</small></span></label>
+    ${grace}
     ${updateProgressBar(snapshot)}
     ${snapshot.error ? `<p class="error-text">${escapeHtml(explain(snapshot.error))}</p>` : ''}
     ${snapshot.latest_version && snapshot.update_available !== false ? updateNotes(snapshot) : ''}
     <div class="update-actions">
-      <button class="button button-outline" data-update-action="check"${snapshot.status === 'checking' || !snapshot.enabled ? ' disabled' : ''}>${t('checkForUpdates')}</button>
+      <button class="button button-outline" data-update-action="check"${snapshot.status === 'checking' || snapshot.status === 'downloading' || !snapshot.enabled ? ' disabled' : ''}>${t('checkForUpdates')}</button>
       ${snapshot.status === 'ready' ? `<button class="button button-primary" data-update-action="install">${t('installUpdate')}</button>` : ''}
     </div>
+    ${updateHistoryHtml(snapshot)}
   </div>`;
 }
 
 function paintUpdateSettings() {
   const target = $('#update-settings');
   if (target) target.innerHTML = updateSettingsHtml(updateView.snapshot);
+  paintUpdateProgress();
+}
+
+function gateIsBlocked(snapshot) {
+  const gate = snapshot?.gate;
+  if (!gate || gate.status === 'disabled') return false;
+  return gate.status === 'checking' || gate.blocked === true;
 }
 
 function paintUpdates() {
   const snapshot = updateView.snapshot;
   if (!snapshot) return;
+  const blocked = gateIsBlocked(snapshot);
   const banner = $('#update-banner');
   const gate = $('#update-gate');
   const notice = snapshot.enabled && ['optional', 'mandatory', 'ready', 'downloading', 'error'].includes(snapshot.status);
-  banner.hidden = !notice || snapshot.blocking;
+  banner.hidden = !notice || blocked;
   if (!banner.hidden) banner.innerHTML = bannerHtml(snapshot);
-  gate.hidden = !snapshot.blocking;
-  if (!gate.hidden) gate.innerHTML = gateHtml(snapshot);
+  gate.hidden = !blocked;
+  if (blocked) {
+    gate.innerHTML = gateHtml(snapshot);
+    // The login screen and the workspace are unreachable until the version
+    // policy opens; nothing behind them is painted or callable.
+    $('#auth').hidden = true;
+    $('#app').hidden = true;
+    $('#buy-package').hidden = true;
+    updateView.gateWasBlocked = true;
+  } else if (updateView.gateWasBlocked) {
+    updateView.gateWasBlocked = false;
+    if (updateView.booted) {
+      if (state.user) $('#app').hidden = false;
+      else showAuth().catch((error) => { $('#auth-error').textContent = explain(error.message); });
+    }
+  }
   paintUpdateSettings();
+  paintUpdateProgress();
 }
 
-async function runUpdateAction(action) {
+async function runUpdateAction(action, value) {
   const api = window.somiti.updates;
   try {
-    if (action === 'check') updateView.snapshot = await api.check();
+    if (action === 'check') { updateView.showNotes = false; updateView.snapshot = await api.check(); }
+    else if (action === 'gate-check') { updateView.showNotes = false; updateView.snapshot = await api.checkGate(); }
+    else if (action === 'gate-update') {
+      updateView.snapshot = { ...updateView.snapshot, status: 'downloading', download: { received: 0, total: 0, percent: 0 } };
+      paintUpdates();
+      updateView.snapshot = await api.apply();
+    } else if (action === 'gate-retry') {
+      updateView.snapshot = await api.retry();
+    } else if (action === 'gate-verify') {
+      updateView.snapshot = await api.verify();
+      toast(t('updateVerified'));
+    } else if (action === 'auto') updateView.snapshot = await api.setAuto(Boolean(value));
+    else if (action === 'notes') updateView.showNotes = !updateView.showNotes;
     else if (action === 'install') {
       if (updateView.snapshot?.status === 'ready') {
         toast(t('restartingForUpdate'));
@@ -2892,27 +3126,36 @@ async function runUpdateAction(action) {
     else if (action === 'skip') updateView.snapshot = await api.skip();
   } catch (error) {
     toast(explain(error.message));
+    try { updateView.snapshot = await api.state(); } catch { /* keep the last snapshot */ }
   }
   paintUpdates();
 }
 
 async function initUpdates() {
-  if (!window.somiti?.updates) return;
+  if (!window.somiti?.updates) return null;
+  // Subscribe before the first read so a policy answer that arrives during the
+  // round trip is never lost between states.
+  window.somiti.updates.onEvent((snapshot) => {
+    updateView.snapshot = snapshot;
+    paintUpdates();
+  });
   try {
     updateView.snapshot = await window.somiti.updates.state();
-    paintUpdates();
-    window.somiti.updates.onEvent((snapshot) => {
-      updateView.snapshot = snapshot;
-      paintUpdates();
-    });
   } catch (error) {
     console.error('Update state could not be loaded:', error.message);
   }
+  paintUpdates();
+  return updateView.snapshot;
 }
 
 document.addEventListener('click', (event) => {
   const button = event.target.closest('[data-update-action]');
   if (button && !button.disabled) runUpdateAction(button.dataset.updateAction);
+});
+
+document.addEventListener('change', (event) => {
+  const input = event.target.closest('[data-update-auto]');
+  if (input && !input.disabled) runUpdateAction('auto', input.checked);
 });
 
 async function renderPage(page) {
@@ -2925,6 +3168,7 @@ async function renderPage(page) {
     routes: () => renderEntity('routes'), members: () => renderEntity('members'),
     cashbook: renderCashbook, banks: renderBankManagement, reports: renderReports, cashInReport: renderCashInReport, cashOutReport: renderCashOutReport, users: renderUsers,
     settings: renderSettings, funds: () => renderEntity('funds'),
+    subscription: () => window.SomitiSubscription.renderPage(),
   };
   try { await (pages[page] || renderDashboard)(); }
   catch (error) { $('#content').innerHTML = `<div class="panel error-text">${escapeHtml(explain(error.message))}</div>`; }
@@ -2937,10 +3181,29 @@ $('#language-toggle').addEventListener('click', () => {
   if (state.user) { nav(); $('#page-title').textContent = t(state.page); renderPage(state.page); }
   paintUpdates();
 });
+$('#auth-toggle-password').addEventListener('click', () => {
+  const input = $('#auth-password');
+  const reveal = input.type === 'password';
+  input.type = reveal ? 'text' : 'password';
+  $('#auth-toggle-password').textContent = reveal ? 'Hide' : 'Show';
+  $('#auth-toggle-password').setAttribute('aria-label', reveal ? 'Hide password' : 'Show password');
+});
 $('#logout').addEventListener('click', async () => {
   await window.somiti.auth.logout();
   state.user = null;
+  if (window.SomitiSubscription) {
+    window.SomitiSubscription.stop();
+    window.SomitiSubscription.hideBuy();
+  }
+  $('#sub-gate').hidden = true;
   showAuth();
 });
-showAuth().catch((error) => { $('#auth-error').textContent = explain(error.message); });
-initUpdates();
+async function bootApplication() {
+  updateView.booted = false;
+  await initUpdates();
+  updateView.booted = true;
+  if (gateIsBlocked(updateView.snapshot)) return;
+  await showAuth();
+}
+
+bootApplication().catch((error) => { $('#auth-error').textContent = explain(error.message); });

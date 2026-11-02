@@ -554,13 +554,17 @@ test('fund transfers are balance movements, not income or expense', () =>
 
 test('the dashboard summarises collections, expenses and the monthly trend', () =>
   withDatabase(({ database, admin, owner, fund }) => {
-    database.postTransaction(admin, { transaction_type: 'income', date: '2026-10-30', fund_id: fund.id, amount_paisa: 90000, owner_id: owner.id });
-    database.postTransaction(admin, { transaction_type: 'expense', date: '2026-10-28', fund_id: fund.id, amount_paisa: 40000, category: 'Bus Repair' });
+    const now = new Date();
+    const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const incomeDate = `${month}-${String(Math.min(now.getDate(), 28)).padStart(2, '0')}`;
+    const expenseDate = `${month}-${String(Math.max(1, Math.min(now.getDate(), 27))).padStart(2, '0')}`;
+    database.postTransaction(admin, { transaction_type: 'income', date: incomeDate, fund_id: fund.id, amount_paisa: 90000, owner_id: owner.id });
+    database.postTransaction(admin, { transaction_type: 'expense', date: expenseDate, fund_id: fund.id, amount_paisa: 40000, category: 'Bus Repair' });
     const view = database.dashboard(admin);
     assert.equal(view.totals.month_collection_paisa, 90000);
     assert.equal(view.totals.month_expenses_paisa, 40000);
     assert.equal(view.totals.funds_paisa, 50000);
-    const current = view.monthly.find((row) => row.period === new Date().toISOString().slice(0, 7));
+    const current = view.monthly.find((row) => row.period === month);
     assert.equal(current.income_paisa >= 90000, true);
     assert.equal(view.recent.length, 2);
   }));
@@ -599,7 +603,7 @@ test('automatic backup writes one dated copy per day and keeps the newest ones',
 
 test('association settings print on the receipt and can be saved only by an administrator', () =>
   withDatabase(async ({ database, admin, owner, fund }) => {
-    assert.equal(database.getSettings().name, 'Bus Malik Somiti');
+    assert.equal(database.getSettings().name, 'Bus Malik Group');
     const staff = database.createUser({ username: 'staff2', full_name: 'Staff Two', password: 'secure-password', role: 'staff' }, admin);
     assert.throws(() => database.saveSettings(staff, { name: 'Nope' }), /administrator/);
     const saved = database.saveSettings(admin, { name: 'Bus Malik Samiti Bangladesh', address: 'Bus Stand Road, Jhenaidah', keep_copies: 999 });

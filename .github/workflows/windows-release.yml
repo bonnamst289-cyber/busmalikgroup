@@ -16,6 +16,14 @@ on:
         description: 'Publish this build as a GitHub Release'
         type: boolean
         default: false
+      mandatory:
+        description: 'Block every older installed version until this release is installed'
+        type: boolean
+        default: true
+      minimum_version:
+        description: 'Oldest installed version still allowed (blank = this release)'
+        type: string
+        default: ''
 
 permissions:
   contents: write
@@ -63,6 +71,41 @@ jobs:
       - name: Build the NSIS installer and latest.yml
         run: npx electron-builder --win nsis --x64 --publish never
 
+      - name: Build the central version policy and the installer SHA256
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+          MINIMUM_VERSION: ${{ inputs.minimum_version }}
+          MANDATORY: ${{ inputs.mandatory }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if (-not $env:VERSION) {
+            $env:VERSION = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          }
+          $manifestArgs = @('--version', $env:VERSION)
+          if ($env:MINIMUM_VERSION) { $manifestArgs += @('--minimum-version', $env:MINIMUM_VERSION) }
+          # Tag pushes are strict: the new version becomes the minimum. A manual
+          # run may deliberately publish an optional release.
+          if ($env:EVENT_NAME -eq 'workflow_dispatch' -and $env:MANDATORY -ne 'true' -and -not $env:MINIMUM_VERSION) {
+            $manifestArgs += '--optional'
+          } else {
+            $manifestArgs += '--mandatory'
+          }
+          node scripts/update-manifest.cjs @manifestArgs
+          if (-not (Test-Path "dist/version.json")) { Write-Error "version.json was not generated."; exit 1 }
+          if (-not (Test-Path "dist/BusMalikGroup-Setup-$env:VERSION-x64.exe.sha256")) { Write-Error "Installer checksum was not generated."; exit 1 }
+          $policy = Get-Content dist/version.json -Raw | ConvertFrom-Json
+          foreach ($field in @('latest_version','minimum_required_version','download_url','sha256','release_notes','release_date','mandatory')) {
+            if (-not $policy.PSObject.Properties[$field]) { Write-Error "version.json is missing $field."; exit 1 }
+          }
+          if ($policy.latest_version -ne $env:VERSION) { Write-Error "version.json latest_version does not match $env:VERSION."; exit 1 }
+          if ([version]$policy.minimum_required_version -gt [version]$policy.latest_version) {
+            Write-Error "minimum_required_version is newer than latest_version."
+            exit 1
+          }
+          if ($policy.sha256 -notmatch '^[a-f0-9]{64}$') { Write-Error "version.json SHA256 is invalid."; exit 1 }
+          Get-Content dist/version.json
+
       - name: Check what the installed application will use for updates
         shell: pwsh
         run: |
@@ -88,14 +131,28 @@ jobs:
         run: |
           $assets = @(
             "dist/latest.yml",
-            "dist/BusMalikSomiti-Setup-$env:VERSION-x64.exe",
-            "dist/BusMalikSomiti-Setup-$env:VERSION-x64.exe.blockmap"
+            "dist/version.json",
+            "dist/BusMalikGroup-Setup-$env:VERSION-x64.exe",
+            "dist/BusMalikGroup-Setup-$env:VERSION-x64.exe.blockmap",
+            "dist/BusMalikGroup-Setup-$env:VERSION-x64.exe.sha256"
           )
           foreach ($asset in $assets) {
             if (-not (Test-Path $asset)) { Write-Error "Missing $asset - refusing to publish an incomplete release."; exit 1 }
           }
+          # A published version is permanent for update purposes. Re-running the
+          # same tag is allowed, but an older version must never be published
+          # over a newer one because downgrades are refused by the application.
+          $published = gh release list --limit 100 --json tagName -q '.[].tagName' |
+            Where-Object { $_ -match '^v\d+\.\d+\.\d+$' } |
+            ForEach-Object { $_.Substring(1) } |
+            Sort-Object { [version]$_ }
+          $latest = $published | Select-Object -Last 1
+          if ($latest -and ([version]$env.VERSION -lt [version]$latest)) {
+            Write-Error "Version $env.VERSION is older than the published release v$latest. Bump the version instead of reusing it."
+            exit 1
+          }
           if (-not (gh release view $env:TAG 2>$null)) {
-            gh release create $env:TAG --title "Bus Malik Somiti $env:VERSION" --notes-file dist/release-notes.md --target ${{ github.sha }}
+            gh release create $env:TAG --title "Bus Malik Group $env:VERSION" --notes-file dist/release-notes.md --target ${{ github.sha }}
           }
           gh release upload $env:TAG --clobber $assets
           gh release view $env:TAG
@@ -106,6 +163,10 @@ jobs:
         with:
           name: bus-malik-somiti-windows-x64
           path: |
-            dist/BusMalikSomiti-Setup-*-x64.exe
+            dist/BusMalikGroup-Setup-*-x64.exe
+            dist/BusMalikGroup-Setup-*-x64.exe.blockmap
+            dist/BusMalikGroup-Setup-*-x64.exe.sha256
             dist/latest.yml
+            dist/version.json
+            dist/release-notes.md
           if-no-files-found: error
