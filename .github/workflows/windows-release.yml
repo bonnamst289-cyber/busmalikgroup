@@ -147,8 +147,8 @@ jobs:
             ForEach-Object { $_.Substring(1) } |
             Sort-Object { [version]$_ }
           $latest = $published | Select-Object -Last 1
-          if ($latest -and ([version]$env.VERSION -lt [version]$latest)) {
-            Write-Error "Version $env.VERSION is older than the published release v$latest. Bump the version instead of reusing it."
+          if ($latest -and ([version]$env:VERSION -lt [version]$latest)) {
+            Write-Error "Version $env:VERSION is older than the published release v$latest. Bump the version instead of reusing it."
             exit 1
           }
           if (-not (gh release view $env:TAG 2>$null)) {
